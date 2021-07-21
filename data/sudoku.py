@@ -34,17 +34,18 @@ class SudokuDataset(Dataset):
         const_index = 0
         b_values = []
 
-        for i, _ in enumerate(data):
+        # Should be in range 1-9 and set given numbers
+        for i, v in enumerate(data):
             indices.append((i, const_index))
-            const_index += 1
             a_values.append(1)
-            b_values.append(high_value)
-
-        for i, _ in enumerate(data):
-            indices.append((i, const_index))
+            b_values.append(high_value if v == 0 else v)
             const_index += 1
+
+        for i, v in enumerate(data):
+            indices.append((i, const_index))
             a_values.append(-1)
-            b_values.append(-low_value)
+            b_values.append(-low_value if v == 0 else -v)
+            const_index += 1
 
         i = [x for x, _ in indices]
         j = [x for _, x in indices]
