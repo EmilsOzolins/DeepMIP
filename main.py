@@ -47,7 +47,7 @@ def relu1(inputs):
 
 if __name__ == '__main__':
     dataset = SudokuDataset("binary/sudoku.csv")
-    dataloader = DataLoader(dataset, batch_size=1, shuffle=True, collate_fn=batch_graphs)
+    dataloader = DataLoader(dataset, batch_size=16, shuffle=True, collate_fn=batch_graphs)
 
     bit_count = 4
     steps = 10000
@@ -67,7 +67,7 @@ if __name__ == '__main__':
 
         assignment = torch.sum(powers_of_two * assignment, dim=-1, keepdim=True)
 
-        loss = relu1(torch.squeeze(torch.sparse.mm(adj_matrix.t(), assignment)) - b_values) ** 2
+        loss = relu1(torch.squeeze(torch.sparse.mm(adj_matrix.t(), assignment)) - b_values)
         loss = torch.sum(loss) + int_loss
 
         loss.backward()
