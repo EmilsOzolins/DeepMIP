@@ -16,7 +16,7 @@ class SudokuDataset(Dataset):
         y = self.labels[index]
         y = self._prepare_sudoku(y)
 
-        return self._prepare_mip(x), y
+        return self._prepare_mip(x), x
 
     @staticmethod
     def _prepare_sudoku(data, dtype=torch.int32):

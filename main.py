@@ -40,10 +40,14 @@ def as_binary(x, bits):
     return x.int().unsqueeze(-1).bitwise_and(mask).ne(0).float()
 
 
+def relu1(inputs):
+    m = torch.maximum(torch.zeros_like(inputs), inputs)
+    return torch.minimum(torch.ones_like(m), m)
+
+
 if __name__ == '__main__':
     dataset = SudokuDataset("binary/sudoku.csv")
-    # TODO: Implement batching
-    dataloader = DataLoader(dataset, batch_size=4, shuffle=True, collate_fn=batch_graphs)
+    dataloader = DataLoader(dataset, batch_size=1, shuffle=True, collate_fn=batch_graphs)
 
     bit_count = 4
     steps = 10000
@@ -58,11 +62,13 @@ if __name__ == '__main__':
     for step, ((adj_matrix, b_values), label) in zip(range(steps), dataloader):
         optimizer.zero_grad()
 
-        assignment = network.forward(adj_matrix, as_binary(torch.abs(b_values), bit_count))
+        assignment = network.forward(adj_matrix, b_values)
+        int_loss = torch.sum(torch.square(assignment) * torch.square(1 - assignment))
+
         assignment = torch.sum(powers_of_two * assignment, dim=-1, keepdim=True)
 
-        loss = torch.relu(torch.squeeze(torch.sparse.mm(adj_matrix.t(), assignment)) - b_values)
-        loss = torch.sum(loss)
+        loss = relu1(torch.squeeze(torch.sparse.mm(adj_matrix.t(), assignment)) - b_values) ** 2
+        loss = torch.sum(loss) + int_loss
 
         loss.backward()
         optimizer.step()
@@ -70,5 +76,6 @@ if __name__ == '__main__':
         average_loss += loss.detach()
         if step % 500 == 0:
             print("Step: ", step, "Avg. Loss:", (average_loss / 500.).cpu().numpy())
-            print("Last output", torch.round(torch.squeeze(assignment)).cpu().detach().numpy())
+            print("Last output", torch.round(torch.squeeze(assignment)).cpu().detach().int().numpy())
+            print("Label", label.cpu().detach().int().numpy()[0])
             average_loss = 0
