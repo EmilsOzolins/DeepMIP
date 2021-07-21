@@ -35,25 +35,30 @@ def batch_graphs(batch):
     return (batch_adj, torch.cat(const_values, dim=-1)), torch.stack(labels, dim=0)
 
 
+def as_binary(x, bits):
+    mask = 2 ** torch.arange(bits).cuda()
+    return x.int().unsqueeze(-1).bitwise_and(mask).ne(0).float()
+
+
 if __name__ == '__main__':
     dataset = SudokuDataset("binary/sudoku.csv")
     # TODO: Implement batching
-    dataloader = DataLoader(dataset, batch_size=2, shuffle=True, collate_fn=batch_graphs)
+    dataloader = DataLoader(dataset, batch_size=4, shuffle=True, collate_fn=batch_graphs)
 
     bit_count = 4
     steps = 10000
 
-    network = MIPNetwork(bit_count)
+    network = MIPNetwork(bit_count).cuda()
     optimizer = torch.optim.Adam(network.parameters(), lr=0.0001)
 
-    powers_of_two = torch.tensor([2 ** k for k in range(0, bit_count)], dtype=torch.float32)
+    powers_of_two = torch.tensor([2 ** k for k in range(0, bit_count)], dtype=torch.float32).cuda()
 
     average_loss = 0
 
     for step, ((adj_matrix, b_values), label) in zip(range(steps), dataloader):
         optimizer.zero_grad()
 
-        assignment = network.forward(adj_matrix, b_values)
+        assignment = network.forward(adj_matrix, as_binary(torch.abs(b_values), bit_count))
         assignment = torch.sum(powers_of_two * assignment, dim=-1, keepdim=True)
 
         loss = torch.relu(torch.squeeze(torch.sparse.mm(adj_matrix.t(), assignment)) - b_values)
@@ -64,6 +69,6 @@ if __name__ == '__main__':
 
         average_loss += loss.detach()
         if step % 500 == 0:
-            print("Step: ", step, "Avg. Loss:", (average_loss / 500.).numpy())
-            print("Last output", torch.round(torch.squeeze(assignment)).detach().numpy())
+            print("Step: ", step, "Avg. Loss:", (average_loss / 500.).cpu().numpy())
+            print("Last output", torch.round(torch.squeeze(assignment)).cpu().detach().numpy())
             average_loss = 0

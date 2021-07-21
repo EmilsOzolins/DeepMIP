@@ -50,8 +50,8 @@ class SudokuDataset(Dataset):
         i = [x for x, _ in indices]
         j = [x for _, x in indices]
 
-        adj_matrix = torch.sparse_coo_tensor(torch.tensor([i, j]), torch.tensor(a_values), dtype=dtype)
-        return adj_matrix, torch.tensor(b_values, dtype=dtype)
+        adj_matrix = torch.sparse_coo_tensor(torch.tensor([i, j]), torch.tensor(a_values), dtype=dtype).cuda()
+        return adj_matrix, torch.tensor(b_values, dtype=dtype).cuda()
 
     def __len__(self):
         return len(self.features)

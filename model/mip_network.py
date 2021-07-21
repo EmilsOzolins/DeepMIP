@@ -28,7 +28,13 @@ class MIPNetwork(torch.nn.Module):
             nn.Linear(self.feature_maps * 2, output_bits)
         )
 
-        self.noise = torch.distributions.Normal(0, 4)
+        self.prepare_cond = nn.Sequential(
+            nn.Linear(output_bits, self.feature_maps * 2),
+            nn.ReLU(),
+            nn.Linear(self.feature_maps * 2, self.feature_maps)
+        )
+
+        self.noise = torch.distributions.Normal(0, 16)
 
     def forward(self, adj_matrix: torch.sparse.Tensor, conditions_values: torch.Tensor):
         """
@@ -37,10 +43,11 @@ class MIPNetwork(torch.nn.Module):
         """
         var_count, const_count = adj_matrix.size()
 
-        variables = torch.ones([var_count, self.feature_maps])
+        variables = torch.ones([var_count, self.feature_maps]).cuda()
+        constraints = self.prepare_cond(conditions_values)
 
-        # TODO: Embed conditions values into the constraints
-        constraints = torch.ones([const_count, self.feature_maps])  # * conditions_values.t()
+        adj_matrix = adj_matrix.coalesce()
+        adj_matrix = torch.sparse_coo_tensor(adj_matrix.indices(), torch.abs(adj_matrix.values()))
 
         # TODO: Use embedding for edges also?
 
@@ -54,6 +61,6 @@ class MIPNetwork(torch.nn.Module):
             variables = self.variable_update(const2var_msg)
 
         assignments = self.output(variables)
-        assignments = torch.sigmoid(assignments + self.noise.sample(assignments.size()))
+        assignments = torch.sigmoid(assignments + self.noise.sample(assignments.size()).cuda())
 
         return assignments
