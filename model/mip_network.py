@@ -4,7 +4,7 @@ import torch.nn as nn
 
 class MIPNetwork(torch.nn.Module):
 
-    def __init__(self, output_bits, feature_maps=16, pass_steps=2):
+    def __init__(self, output_bits, feature_maps=64, pass_steps=2):
         super().__init__()
 
         self.feature_maps = feature_maps
@@ -37,10 +37,10 @@ class MIPNetwork(torch.nn.Module):
         """
         var_count, const_count = adj_matrix.size()
 
-        variables = torch.randn([var_count, self.feature_maps])
+        variables = torch.ones([var_count, self.feature_maps])
 
         # TODO: Embed conditions values into the constraints
-        constraints = torch.randn([const_count, self.feature_maps])  # * conditions_values.t()
+        constraints = torch.ones([const_count, self.feature_maps])  # * conditions_values.t()
 
         # TODO: Use embedding for edges also?
 
