@@ -44,7 +44,7 @@ def relu1(inputs):
 
 if __name__ == '__main__':
     dataset = SudokuDataset("binary/sudoku.csv")
-    dataloader = DataLoader(dataset, batch_size=4, shuffle=True, collate_fn=batch_graphs)
+    dataloader = DataLoader(dataset, batch_size=32, shuffle=True, collate_fn=batch_graphs)
 
     bit_count = 4
     steps = 10000
@@ -73,6 +73,6 @@ if __name__ == '__main__':
         average_loss += loss.detach()
         if step % 500 == 0:
             print("Step: ", step, "Avg. Loss:", (average_loss / 500.).cpu().numpy())
-            print("Last output", torch.round(torch.squeeze(assignment)).cpu().detach().int().numpy())
-            print("Label      ", label.cpu().detach().int().numpy())
+            print("Last output", torch.round(torch.squeeze(assignment)).cpu().detach().int().numpy()[:9])
+            print("Label      ", label.cpu().detach().int().numpy()[:9])
             average_loss = 0

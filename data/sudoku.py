@@ -47,10 +47,54 @@ class SudokuDataset(Dataset):
             b_values.append(-low_value if v == 0 else -v)
             const_index += 1
 
+        new_variable = len(data)
+
+        # This should encode that first rows elements are not equal
+        for i in range(9):
+            for j in range(i + 1, 9, 1):
+                indices.append((j, const_index))
+                a_values.append(1)
+                indices.append((i, const_index))
+                a_values.append(-1)
+                indices.append((new_variable, const_index))
+                a_values.append(9)
+                b_values.append(9 - 1)
+
+                const_index += 1
+                new_variable += 1
+
+                indices.append((i, const_index))
+                a_values.append(1)
+                indices.append((j, const_index))
+                a_values.append(-1)
+                indices.append((new_variable, const_index))
+                a_values.append(-9)
+                b_values.append(-1)
+
+                const_index += 1
+
+                indices.append((new_variable - 1, const_index))
+                a_values.append(1)
+                indices.append((new_variable, const_index))
+                a_values.append(1)
+                b_values.append(1)
+
+                const_index += 1
+
+                indices.append((new_variable - 1, const_index))
+                a_values.append(-1)
+                indices.append((new_variable, const_index))
+                a_values.append(-1)
+                b_values.append(-1)
+
+                new_variable += 1
+                const_index += 1
+
         i = [x for x, _ in indices]
         j = [x for _, x in indices]
 
-        adj_matrix = torch.sparse_coo_tensor(torch.tensor([i, j]), torch.tensor(a_values), dtype=dtype, device=torch.device('cuda:0'))
+        adj_matrix = torch.sparse_coo_tensor(torch.tensor([i, j]), torch.tensor(a_values), dtype=dtype,
+                                             device=torch.device('cuda:0'))
         return adj_matrix, torch.tensor(b_values, dtype=dtype, device=torch.device('cuda:0'))
 
     def __len__(self):
