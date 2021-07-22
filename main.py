@@ -7,6 +7,8 @@ from model.mip_network import MIPNetwork
 
 def batch_graphs(batch):
     features = [x for x, _ in batch]
+
+    # TODO: Here I return input Sudoku, but in future chang it to solution
     labels = [x for _, x in batch]
 
     adj_matrices = [x.coalesce() for x, _ in features]
@@ -32,7 +34,7 @@ def batch_graphs(batch):
 
     batch_adj = torch.sparse_coo_tensor(torch.cat(indices, dim=-1), torch.cat(values, dim=-1))
 
-    return (batch_adj, torch.cat(const_values, dim=-1)), torch.stack(labels, dim=0)
+    return (batch_adj, torch.cat(const_values, dim=-1)), torch.cat(labels, dim=-1)
 
 
 def as_binary(x, bits):
@@ -47,7 +49,7 @@ def relu1(inputs):
 
 if __name__ == '__main__':
     dataset = SudokuDataset("binary/sudoku.csv")
-    dataloader = DataLoader(dataset, batch_size=16, shuffle=True, collate_fn=batch_graphs)
+    dataloader = DataLoader(dataset, batch_size=4, shuffle=True, collate_fn=batch_graphs)
 
     bit_count = 4
     steps = 10000
@@ -77,5 +79,5 @@ if __name__ == '__main__':
         if step % 500 == 0:
             print("Step: ", step, "Avg. Loss:", (average_loss / 500.).cpu().numpy())
             print("Last output", torch.round(torch.squeeze(assignment)).cpu().detach().int().numpy())
-            print("Label", label.cpu().detach().int().numpy()[0])
+            print("Label      ", label.cpu().detach().int().numpy())
             average_loss = 0
