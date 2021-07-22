@@ -4,7 +4,7 @@ import torch.nn as nn
 
 class MIPNetwork(torch.nn.Module):
 
-    def __init__(self, output_bits, feature_maps=64, pass_steps=1):
+    def __init__(self, output_bits, feature_maps=64, pass_steps=3):
         super().__init__()
 
         self.feature_maps = feature_maps
@@ -27,7 +27,8 @@ class MIPNetwork(torch.nn.Module):
         self.output = nn.Sequential(
             nn.Linear(self.feature_maps, self.feature_maps * 2),
             nn.ReLU(),
-            nn.Linear(self.feature_maps * 2, output_bits)
+            nn.Linear(self.feature_maps * 2, output_bits),
+            nn.Sigmoid()
         )
 
         self.prepare_cond = nn.Sequential(
@@ -46,21 +47,16 @@ class MIPNetwork(torch.nn.Module):
         """
         var_count, const_count = adj_matrix.size()
 
-        variables = torch.ones([var_count, self.feature_maps]).cuda()
-        constraints = emb_values = self.prepare_cond(torch.unsqueeze(conditions_values, dim=-1))
+        variables = torch.ones([var_count, self.feature_maps], device=torch.device('cuda:0'))
+        constraints = emb_value = self.prepare_cond(torch.unsqueeze(conditions_values, dim=-1))
 
         for i in range(self.pass_steps):
             var2const_msg = torch.mm(adj_matrix.t(), variables)
-            var2const_msg = torch.cat([constraints, emb_values, var2const_msg], dim=-1)
+            var2const_msg = torch.cat([constraints, emb_value, var2const_msg], dim=-1)
             constraints = self.constraint_update(var2const_msg)
 
             const2var_msg = torch.mm(adj_matrix, constraints)
             const2var_msg = torch.cat([variables, const2var_msg], dim=-1)
             variables = self.variable_update(const2var_msg)
 
-        assignments = self.output(variables)
-
-        # self.noise = torch.distributions.Normal(0, 16)
-        assignments = torch.sigmoid(assignments)  # + self.noise.sample(assignments.size()).cuda())
-
-        return assignments
+        return self.output(variables)

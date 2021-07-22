@@ -37,11 +37,6 @@ def batch_graphs(batch):
     return (batch_adj, torch.cat(const_values, dim=-1)), torch.cat(labels, dim=-1)
 
 
-def as_binary(x, bits):
-    mask = 2 ** torch.arange(bits).cuda()
-    return x.int().unsqueeze(-1).bitwise_and(mask).ne(0).float()
-
-
 def relu1(inputs):
     m = torch.maximum(torch.zeros_like(inputs), inputs)
     return torch.minimum(torch.ones_like(m), m)
@@ -57,7 +52,7 @@ if __name__ == '__main__':
     network = MIPNetwork(bit_count).cuda()
     optimizer = torch.optim.Adam(network.parameters(), lr=0.0001)
 
-    powers_of_two = torch.tensor([2 ** k for k in range(0, bit_count)], dtype=torch.float32).cuda()
+    powers_of_two = torch.tensor([2 ** k for k in range(0, bit_count)], dtype=torch.float32, device=torch.device('cuda:0'))
 
     average_loss = 0
 
