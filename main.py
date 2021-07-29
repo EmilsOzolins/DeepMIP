@@ -54,27 +54,34 @@ if __name__ == '__main__':
     network = MIPNetwork(bit_count).cuda()
     optimizer = torch.optim.Adam(network.parameters(), lr=0.0001)
 
-    powers_of_two = torch.tensor([2 ** k for k in range(0, bit_count)], dtype=torch.float32, device=torch.device('cuda:0'))
+    powers_of_two = torch.tensor([2 ** k for k in range(0, bit_count)], dtype=torch.float32,
+                                 device=torch.device('cuda:0'))
 
     average_loss = 0
 
     for step, ((adj_matrix, b_values), label) in zip(range(steps), dataloader):
         optimizer.zero_grad()
 
-        assignment = network.forward(adj_matrix, b_values)
+        assignments = network.forward(adj_matrix, b_values)
         # int_loss = torch.square(assignment) * torch.square(1 - assignment)
 
-        assignment = torch.sum(powers_of_two * assignment, dim=-1, keepdim=True)
+        loss = 0
+        last_assignment = None
+        for asn in assignments:
+            last_assignment = torch.sum(powers_of_two * asn, dim=-1, keepdim=True)
 
-        loss = relu1(torch.squeeze(torch.sparse.mm(adj_matrix.t(), assignment)) - b_values)
-        loss = torch.sum(loss) #+ torch.sum(int_loss)
+            l = relu1(torch.squeeze(torch.sparse.mm(adj_matrix.t(), last_assignment)) - b_values)
+            l = torch.sum(l)  # + torch.sum(int_loss)
+            loss += l
+
+        loss /= len(assignments)
 
         loss.backward()
         optimizer.step()
 
         average_loss += loss.detach()
         if step % 500 == 0:
-            assignment = torch.round(torch.squeeze(assignment))
+            assignment = torch.round(torch.squeeze(last_assignment))
             assignment = torch.reshape(assignment, [batch_size, 9, 9, 9])
             assignment = torch.argmax(assignment, dim=-1) + 1
 

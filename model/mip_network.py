@@ -53,6 +53,8 @@ class MIPNetwork(torch.nn.Module):
         variables = torch.ones([var_count, self.feature_maps], device=torch.device('cuda:0'))
         constraints = emb_value = self.prepare_cond(torch.unsqueeze(conditions_values, dim=-1))
 
+        outputs = []
+
         for i in range(self.pass_steps):
             var2const_msg = torch.mm(adj_matrix.t(), variables)
             var2const_msg = torch.cat([constraints, emb_value, var2const_msg], dim=-1)
@@ -62,5 +64,9 @@ class MIPNetwork(torch.nn.Module):
             const2var_msg = torch.cat([variables, const2var_msg], dim=-1)
             variables = self.variable_update(const2var_msg)
 
-        out_vars = self.output(variables)
-        return torch.sigmoid(out_vars + self.noise.sample(out_vars.size()).cuda())
+            out_vars = self.output(variables)
+            out = torch.sigmoid(out_vars + self.noise.sample(out_vars.size()).cuda())
+
+            outputs.append(out)
+
+        return outputs
