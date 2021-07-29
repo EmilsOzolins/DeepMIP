@@ -1,43 +1,45 @@
 import torch
 import torch.nn as nn
 
+from model.normalization import PairNorm
+
 
 class MIPNetwork(torch.nn.Module):
 
-    def __init__(self, output_bits, feature_maps=32, pass_steps=3):
+    def __init__(self, output_bits, feature_maps=64, pass_steps=4):
         super().__init__()
 
         self.feature_maps = feature_maps
         self.pass_steps = pass_steps
 
         self.constraint_update = nn.Sequential(
-            nn.Linear(self.feature_maps * 3, self.feature_maps * 2),
-            nn.ReLU(),
-            nn.Linear(self.feature_maps * 2, self.feature_maps),
-            nn.LayerNorm(self.feature_maps, elementwise_affine=False)
+            nn.Linear(self.feature_maps * 3, self.feature_maps),
+            nn.LeakyReLU(),
+            nn.Linear(self.feature_maps, self.feature_maps),
+            PairNorm()
         )
 
         self.variable_update = nn.Sequential(
-            nn.Linear(self.feature_maps * 2, self.feature_maps * 2),
-            nn.ReLU(),
             nn.Linear(self.feature_maps * 2, self.feature_maps),
-            nn.LayerNorm(self.feature_maps, elementwise_affine=False)
+            nn.LeakyReLU(),
+            nn.Linear(self.feature_maps, self.feature_maps),
+            PairNorm()
         )
 
         self.output = nn.Sequential(
-            nn.Linear(self.feature_maps, self.feature_maps * 2),
-            nn.ReLU(),
-            nn.Linear(self.feature_maps * 2, output_bits)
+            nn.Linear(self.feature_maps, self.feature_maps),
+            nn.LeakyReLU(),
+            nn.Linear(self.feature_maps, output_bits)
         )
 
         self.prepare_cond = nn.Sequential(
-            nn.Linear(1, self.feature_maps * 2),
-            nn.ReLU(),
-            nn.Linear(self.feature_maps * 2, self.feature_maps),
-            nn.LayerNorm(self.feature_maps, elementwise_affine=False)
+            nn.Linear(1, self.feature_maps),
+            nn.LeakyReLU(),
+            nn.Linear(self.feature_maps, self.feature_maps),
+            PairNorm()
         )
 
-        self.noise = torch.distributions.Normal(0, 1)
+        self.noise = torch.distributions.Normal(0, 3)
 
         self.step = 0
 
@@ -61,4 +63,4 @@ class MIPNetwork(torch.nn.Module):
             variables = self.variable_update(const2var_msg)
 
         out_vars = self.output(variables)
-        return torch.sigmoid(out_vars)  # + self.noise.sample(out_vars.size()).cuda())
+        return torch.sigmoid(out_vars + self.noise.sample(out_vars.size()).cuda())

@@ -43,7 +43,7 @@ def relu1(inputs):
 
 
 if __name__ == '__main__':
-    batch_size = 4
+    batch_size = 16
 
     dataset = BinarySudokuDataset("binary/sudoku.csv")
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, collate_fn=batch_graphs)
@@ -54,8 +54,7 @@ if __name__ == '__main__':
     network = MIPNetwork(bit_count).cuda()
     optimizer = torch.optim.Adam(network.parameters(), lr=0.0001)
 
-    powers_of_two = torch.tensor([2 ** k for k in range(0, bit_count)], dtype=torch.float32,
-                                 device=torch.device('cuda:0'))
+    powers_of_two = torch.tensor([2 ** k for k in range(0, bit_count)], dtype=torch.float32, device=torch.device('cuda:0'))
 
     average_loss = 0
 
@@ -63,12 +62,12 @@ if __name__ == '__main__':
         optimizer.zero_grad()
 
         assignment = network.forward(adj_matrix, b_values)
-        int_loss = torch.square(assignment) * torch.square(1 - assignment)
+        # int_loss = torch.square(assignment) * torch.square(1 - assignment)
 
         assignment = torch.sum(powers_of_two * assignment, dim=-1, keepdim=True)
 
         loss = relu1(torch.squeeze(torch.sparse.mm(adj_matrix.t(), assignment)) - b_values)
-        loss = torch.sum(loss) + torch.sum(int_loss)
+        loss = torch.sum(loss) #+ torch.sum(int_loss)
 
         loss.backward()
         optimizer.step()
