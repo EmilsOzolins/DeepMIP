@@ -4,7 +4,7 @@ import torch.nn as nn
 
 class MIPNetwork(torch.nn.Module):
 
-    def __init__(self, output_bits, feature_maps=64, pass_steps=3):
+    def __init__(self, output_bits, feature_maps=32, pass_steps=3):
         super().__init__()
 
         self.feature_maps = feature_maps
@@ -27,8 +27,7 @@ class MIPNetwork(torch.nn.Module):
         self.output = nn.Sequential(
             nn.Linear(self.feature_maps, self.feature_maps * 2),
             nn.ReLU(),
-            nn.Linear(self.feature_maps * 2, output_bits),
-            nn.Sigmoid()
+            nn.Linear(self.feature_maps * 2, output_bits)
         )
 
         self.prepare_cond = nn.Sequential(
@@ -37,6 +36,8 @@ class MIPNetwork(torch.nn.Module):
             nn.Linear(self.feature_maps * 2, self.feature_maps),
             nn.LayerNorm(self.feature_maps, elementwise_affine=False)
         )
+
+        self.noise = torch.distributions.Normal(0, 1)
 
         self.step = 0
 
@@ -59,4 +60,5 @@ class MIPNetwork(torch.nn.Module):
             const2var_msg = torch.cat([variables, const2var_msg], dim=-1)
             variables = self.variable_update(const2var_msg)
 
-        return self.output(variables)
+        out_vars = self.output(variables)
+        return torch.sigmoid(out_vars)  # + self.noise.sample(out_vars.size()).cuda())

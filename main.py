@@ -1,14 +1,14 @@
 import torch.sparse
 from torch.utils.data import DataLoader
 
-from data.sudoku import SudokuDataset
+from data.sudoku_binary import BinarySudokuDataset
 from model.mip_network import MIPNetwork
 
 
 def batch_graphs(batch):
     features = [x for x, _ in batch]
 
-    # TODO: Here I return input Sudoku, but in future chang it to solution
+    # TODO: Here I return input Sudoku, but in future change it to solution
     labels = [x for _, x in batch]
 
     adj_matrices = [x.coalesce() for x, _ in features]
@@ -43,16 +43,19 @@ def relu1(inputs):
 
 
 if __name__ == '__main__':
-    dataset = SudokuDataset("binary/sudoku.csv")
-    dataloader = DataLoader(dataset, batch_size=32, shuffle=True, collate_fn=batch_graphs)
+    batch_size = 4
 
-    bit_count = 4
-    steps = 10000
+    dataset = BinarySudokuDataset("binary/sudoku.csv")
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, collate_fn=batch_graphs)
+
+    bit_count = 1
+    steps = 100000
 
     network = MIPNetwork(bit_count).cuda()
     optimizer = torch.optim.Adam(network.parameters(), lr=0.0001)
 
-    powers_of_two = torch.tensor([2 ** k for k in range(0, bit_count)], dtype=torch.float32, device=torch.device('cuda:0'))
+    powers_of_two = torch.tensor([2 ** k for k in range(0, bit_count)], dtype=torch.float32,
+                                 device=torch.device('cuda:0'))
 
     average_loss = 0
 
@@ -60,19 +63,23 @@ if __name__ == '__main__':
         optimizer.zero_grad()
 
         assignment = network.forward(adj_matrix, b_values)
-        int_loss = torch.sum(torch.square(assignment) * torch.square(1 - assignment))
+        int_loss = torch.square(assignment) * torch.square(1 - assignment)
 
         assignment = torch.sum(powers_of_two * assignment, dim=-1, keepdim=True)
 
         loss = relu1(torch.squeeze(torch.sparse.mm(adj_matrix.t(), assignment)) - b_values)
-        loss = torch.sum(loss) + int_loss
+        loss = torch.sum(loss) + torch.sum(int_loss)
 
         loss.backward()
         optimizer.step()
 
         average_loss += loss.detach()
         if step % 500 == 0:
+            assignment = torch.round(torch.squeeze(assignment))
+            assignment = torch.reshape(assignment, [batch_size, 9, 9, 9])
+            assignment = torch.argmax(assignment, dim=-1) + 1
+
             print("Step: ", step, "Avg. Loss:", (average_loss / 500.).cpu().numpy())
-            print("Last output", torch.round(torch.squeeze(assignment)).cpu().detach().int().numpy()[:9])
-            print("Label      ", label.cpu().detach().int().numpy()[:9])
+            print("Main vars  ", assignment[0, ...].cpu().detach().int().numpy())
+            print("Label      ", torch.reshape(label, [batch_size, 9, 9])[0, ...].cpu().detach().int().numpy())
             average_loss = 0
