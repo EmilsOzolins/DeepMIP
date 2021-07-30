@@ -38,12 +38,66 @@ def batch_graphs(batch):
 
 
 def relu1(inputs):
-    m = torch.maximum(torch.zeros_like(inputs), inputs)
-    return torch.minimum(torch.ones_like(m), m)
+    return torch.clamp(inputs, 0, 1)
+
+
+def rows_accuracy(inputs):
+    """ Expect 3D tensor with dimensions [batch_size, 9, 9] with integer values
+    """
+
+    batch, r, c = inputs.size()
+    result = torch.ones([batch, r], device=inputs.device)
+    for i in range(1, 10, 1):
+        value = torch.sum(torch.eq(inputs, i).int(), dim=-1)
+        value = torch.clamp(value, 0, 1)
+        result = result * value
+
+    result = torch.mean(result.float(), dim=-1)
+    return torch.mean(result)
+
+
+def columns_accuracy(inputs):
+    """ Expect 3D tensor with dimensions [batch_size, 9, 9] with integer values
+    """
+    batch, r, c = inputs.size()
+    result = torch.ones([batch, r], device=inputs.device)
+    for i in range(1, 10, 1):
+        value = torch.sum(torch.eq(inputs, i).int(), dim=-2)
+        value = torch.clamp(value, 0, 1)
+        result = result * value
+
+    result = torch.mean(result.float(), dim=-1)
+    return torch.mean(result)
+
+
+def sub_square_accuracy(inputs):
+    pass
+
+
+def givens_accuracy(inputs, givens):
+    mask = torch.clamp(givens, 0, 1)
+    el_equal = torch.eq(mask * inputs, givens) * mask
+    per_batch = torch.mean(el_equal.float(), dim=[-2, -1])
+    return torch.mean(per_batch)
+
+
+def range_accuracy(inputs):
+    geq = torch.greater_equal(inputs, 1)
+    leq = torch.less_equal(inputs, 9)
+    result = torch.logical_and(geq, leq)
+    return torch.mean(torch.mean(result.float(), dim=[-2, -1]))
+
+
+def full_accuracy(inputs, givens):
+    pass
+
+
+def discrete_accuracy(inputs):
+    pass
 
 
 if __name__ == '__main__':
-    batch_size = 16
+    batch_size = 4
 
     dataset = BinarySudokuDataset("binary/sudoku.csv")
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, collate_fn=batch_graphs)
@@ -85,7 +139,13 @@ if __name__ == '__main__':
             assignment = torch.reshape(assignment, [batch_size, 9, 9, 9])
             assignment = torch.argmax(assignment, dim=-1) + 1
 
+            reshaped_label = torch.reshape(label, [batch_size, 9, 9])
+
             print("Step: ", step, "Avg. Loss:", (average_loss / 500.).cpu().numpy())
+            print("Range accuracy: ", range_accuracy(assignment).cpu().detach().numpy())
+            print("Givens accuracy: ", givens_accuracy(assignment, reshaped_label.cuda()).cpu().detach().numpy())
+            print("Rows accuracy: ", rows_accuracy(assignment).cpu().detach().numpy())
+            print("Columns accuracy: ", columns_accuracy(assignment).cpu().detach().numpy())
             print("Main vars  ", assignment[0, ...].cpu().detach().int().numpy())
-            print("Label      ", torch.reshape(label, [batch_size, 9, 9])[0, ...].cpu().detach().int().numpy())
+            print("Label      ", reshaped_label[0, ...].cpu().detach().int().numpy())
             average_loss = 0

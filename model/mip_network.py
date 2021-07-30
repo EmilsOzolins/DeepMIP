@@ -6,7 +6,7 @@ from model.normalization import PairNorm
 
 class MIPNetwork(torch.nn.Module):
 
-    def __init__(self, output_bits, feature_maps=64, pass_steps=4):
+    def __init__(self, output_bits, feature_maps=64, pass_steps=3):
         super().__init__()
 
         self.feature_maps = feature_maps
@@ -68,5 +68,8 @@ class MIPNetwork(torch.nn.Module):
             out = torch.sigmoid(out_vars + self.noise.sample(out_vars.size()).cuda())
 
             outputs.append(out)
+
+            constraints = constraints.detach() * 0.2 + constraints * 0.8
+            variables = variables.detach() * 0.2 + variables * 0.8
 
         return outputs
