@@ -1,4 +1,5 @@
 import itertools
+from pathlib import Path
 
 import numpy
 from comet_ml import Experiment
@@ -8,6 +9,7 @@ from torch.utils.data import random_split
 
 from data.sudoku_binary import BinarySudokuDataset
 from model.mip_network import MIPNetwork
+import hyperparams as params
 
 
 def batch_graphs(batch):
@@ -124,29 +126,35 @@ if __name__ == '__main__':
     numpy.set_printoptions(precision=3)
 
     experiment = Experiment(
-        disabled=False
-    )
+        auto_metric_logging=True,
+        auto_param_logging=True,
+        auto_histogram_weight_logging=True,
+        auto_histogram_activation_logging=True,
+        auto_histogram_gradient_logging=True,
+        disabled=False)  # Set to True to disable logging in comet.ml
 
-    batch_size = 4
+    experiment.log_parameters({x: getattr(params, x) for x in dir(params) if not x.startswith("__")})
+    experiment.log_code(folder=str(Path().resolve()))
 
     dataset = BinarySudokuDataset("binary/sudoku.csv")
     splits = [10000, 10000, len(dataset) - 20000]
     test, validation, train = random_split(dataset, splits, generator=torch.Generator().manual_seed(42))
-    train_dataloader = DataLoader(validation, batch_size=batch_size, shuffle=True, collate_fn=batch_graphs)
-    validation_dataloader = DataLoader(train, batch_size=batch_size, shuffle=True, collate_fn=batch_graphs)
+    train_dataloader = DataLoader(validation, batch_size=params.batch_size, shuffle=True, collate_fn=batch_graphs)
+    validation_dataloader = DataLoader(train, batch_size=params.batch_size, shuffle=True, collate_fn=batch_graphs)
 
-    bit_count = 1
-    steps = 10000
-
-    network = MIPNetwork(bit_count).cuda()
+    network = MIPNetwork(
+        output_bits=params.bit_count,
+        feature_maps=params.feature_maps,
+        pass_steps=params.recurrent_steps
+    ).cuda()
     optimizer = torch.optim.Adam(network.parameters(), lr=0.0001)
 
     # TODO: Move this to model
-    powers_of_two = torch.tensor([2 ** k for k in range(0, bit_count)], dtype=torch.float32,
+    powers_of_two = torch.tensor([2 ** k for k in range(0, params.bit_count)], dtype=torch.float32,
                                  device=torch.device('cuda:0'))
 
     current_step = 0
-    while current_step < steps:
+    while current_step < params.train_steps:
 
         with experiment.train():
             network.train()
@@ -189,20 +197,20 @@ if __name__ == '__main__':
                 assignment = torch.sum(powers_of_two * assignment, dim=-1)
                 assignment = torch.round(assignment)
 
-                assignment = torch.reshape(assignment, [batch_size, 9, 9, 9])
+                assignment = torch.reshape(assignment, [params.batch_size, 9, 9, 9])
                 assignment = torch.argmax(assignment, dim=-1) + 1
 
-                reshaped_givens = torch.reshape(givens, [batch_size, 9, 9])
+                reshaped_givens = torch.reshape(givens, [params.batch_size, 9, 9])
 
                 range_avg.update(range_accuracy(assignment))
                 givens_avg.update(givens_accuracy(assignment, reshaped_givens))
                 rows_avg.update(rows_accuracy(assignment))
                 columns_avg.update(columns_accuracy(assignment))
 
-            print(f"[step={current_step}],"
-                  f"[range_acc={range_avg.numpy_result}],"
-                  f"[givens_acc={givens_avg.numpy_result}],"
-                  f"[rows_acc={rows_avg.numpy_result}],"
+            print(f"[step={current_step}]",
+                  f"[range_acc={range_avg.numpy_result}]",
+                  f"[givens_acc={givens_avg.numpy_result}]",
+                  f"[rows_acc={rows_avg.numpy_result}]",
                   f"[col_acc={columns_avg.numpy_result}]")
 
             # Login in comet.ml dashboard
@@ -213,7 +221,7 @@ if __name__ == '__main__':
 
     with experiment.test():
         network.eval()
-        test_dataloader = DataLoader(test, batch_size=batch_size, shuffle=True, collate_fn=batch_graphs)
+        test_dataloader = DataLoader(test, batch_size=params.batch_size, shuffle=True, collate_fn=batch_graphs)
 
         range_avg = AverageMetric()
         givens_avg = AverageMetric()
@@ -225,10 +233,10 @@ if __name__ == '__main__':
             assignment = torch.sum(powers_of_two * assignment, dim=-1)
             assignment = torch.round(assignment)
 
-            assignment = torch.reshape(assignment, [batch_size, 9, 9, 9])
+            assignment = torch.reshape(assignment, [params.batch_size, 9, 9, 9])
             assignment = torch.argmax(assignment, dim=-1) + 1
 
-            reshaped_givens = torch.reshape(givens, [batch_size, 9, 9])
+            reshaped_givens = torch.reshape(givens, [params.batch_size, 9, 9])
 
             range_avg.update(range_accuracy(assignment))
             givens_avg.update(givens_accuracy(assignment, reshaped_givens))

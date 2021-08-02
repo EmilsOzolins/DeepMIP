@@ -1,12 +1,14 @@
+
 import torch
 import torch.nn as nn
 
 from model.normalization import PairNorm
 
 
+
 class MIPNetwork(torch.nn.Module):
 
-    def __init__(self, output_bits, feature_maps=64, pass_steps=3):
+    def __init__(self, output_bits, feature_maps=64, pass_steps=1):
         super().__init__()
 
         self.feature_maps = feature_maps
@@ -65,8 +67,7 @@ class MIPNetwork(torch.nn.Module):
             variables = self.variable_update(const2var_msg)
 
             out_vars = self.output(variables)
-            dist = torch.distributions.Bernoulli(logits=torch.abs(out_vars))
-            out = torch.sigmoid(out_vars * (dist.sample() * 2 - 1) + self.noise.sample(out_vars.size()).cuda())
+            out = torch.sigmoid(out_vars + self.noise.sample(out_vars.size()).cuda())
 
             outputs.append(out)
 
