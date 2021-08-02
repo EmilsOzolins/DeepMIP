@@ -65,7 +65,8 @@ class MIPNetwork(torch.nn.Module):
             variables = self.variable_update(const2var_msg)
 
             out_vars = self.output(variables)
-            out = torch.sigmoid(out_vars + self.noise.sample(out_vars.size()).cuda())
+            dist = torch.distributions.Bernoulli(logits=torch.abs(out_vars))
+            out = torch.sigmoid(out_vars * (dist.sample() * 2 - 1) + self.noise.sample(out_vars.size()).cuda())
 
             outputs.append(out)
 

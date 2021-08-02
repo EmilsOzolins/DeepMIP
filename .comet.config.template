@@ -1,0 +1,5 @@
+# Remove this comment, rename file to .comet.config and give your data
+[comet]
+api_key = <YOUR API KEY>
+project_name = deepmip
+workspace = <YOUR WORKSPACE>
