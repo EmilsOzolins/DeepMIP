@@ -1,7 +1,10 @@
-from comet_ml import Experiment
+import itertools
 
+import numpy
+from comet_ml import Experiment
 import torch.sparse
 from torch.utils.data import DataLoader
+from torch.utils.data import random_split
 
 from data.sudoku_binary import BinarySudokuDataset
 from model.mip_network import MIPNetwork
@@ -98,65 +101,148 @@ def discrete_accuracy(inputs):
     pass
 
 
+class AverageMetric:
+
+    def __init__(self) -> None:
+        self._value = 0
+        self._count = 0
+
+    @property
+    def result(self):
+        return self._value
+
+    @property
+    def numpy_result(self):
+        return self._value.detach().cpu().numpy()
+
+    def update(self, new_value) -> None:
+        self._count += 1
+        self._value += (new_value - self._value) / self._count
+
+
 if __name__ == '__main__':
+    numpy.set_printoptions(precision=3)
 
     experiment = Experiment(
-        disabled=True
+        disabled=False
     )
 
     batch_size = 4
 
     dataset = BinarySudokuDataset("binary/sudoku.csv")
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, collate_fn=batch_graphs)
+    splits = [10000, 10000, len(dataset) - 20000]
+    test, validation, train = random_split(dataset, splits, generator=torch.Generator().manual_seed(42))
+    train_dataloader = DataLoader(validation, batch_size=batch_size, shuffle=True, collate_fn=batch_graphs)
+    validation_dataloader = DataLoader(train, batch_size=batch_size, shuffle=True, collate_fn=batch_graphs)
 
     bit_count = 1
-    steps = 100000
+    steps = 10000
 
     network = MIPNetwork(bit_count).cuda()
     optimizer = torch.optim.Adam(network.parameters(), lr=0.0001)
 
+    # TODO: Move this to model
     powers_of_two = torch.tensor([2 ** k for k in range(0, bit_count)], dtype=torch.float32,
                                  device=torch.device('cuda:0'))
 
-    average_loss = 0
+    current_step = 0
+    while current_step < steps:
 
-    with experiment.train():
-        for step, ((adj_matrix, b_values), label) in zip(range(steps), dataloader):
-            optimizer.zero_grad()
+        with experiment.train():
+            network.train()
+            loss_avg = AverageMetric()
+            for (adj_matrix, b_values), givens in itertools.islice(train_dataloader, 1000):
+                optimizer.zero_grad()
+                assignments = network.forward(adj_matrix, b_values)
 
-            assignments = network.forward(adj_matrix, b_values)
+                loss = 0
+                last_assignment = None
+                for asn in assignments:
+                    last_assignment = torch.sum(powers_of_two * asn, dim=-1, keepdim=True)
 
-            loss = 0
-            last_assignment = None
-            for asn in assignments:
-                last_assignment = torch.sum(powers_of_two * asn, dim=-1, keepdim=True)
+                    l = relu1(torch.squeeze(torch.sparse.mm(adj_matrix.t(), last_assignment)) - b_values)
+                    loss += torch.sum(l)
 
-                l = relu1(torch.squeeze(torch.sparse.mm(adj_matrix.t(), last_assignment)) - b_values)
-                l = torch.sum(l)  # + torch.sum(int_loss)
-                loss += l
+                loss /= len(assignments)
+                loss_avg.update(loss)
 
-            loss /= len(assignments)
+                loss.backward()
+                optimizer.step()
+                current_step += 1
+                experiment.log_metric("loss", loss)
 
-            loss.backward()
-            optimizer.step()
+            print(f"Step {current_step} avg loss: ", loss_avg.numpy_result)
 
-            average_loss += loss.detach()
-            if step % 500 == 0:
-                assignment = torch.round(torch.squeeze(last_assignment))
+        # TODO: Implement saving to checkpoint - model, optimizer and steps
+        # TODO: Implement training, validating and tasting from checkpoint
+
+        with experiment.validate():
+            network.eval()
+
+            range_avg = AverageMetric()
+            givens_avg = AverageMetric()
+            rows_avg = AverageMetric()
+            columns_avg = AverageMetric()
+
+            for (adj_matrix, b_values), givens in itertools.islice(validation_dataloader, 100):
+                assignment = network.forward(adj_matrix, b_values)[-1]
+                assignment = torch.sum(powers_of_two * assignment, dim=-1)
+                assignment = torch.round(assignment)
+
                 assignment = torch.reshape(assignment, [batch_size, 9, 9, 9])
                 assignment = torch.argmax(assignment, dim=-1) + 1
 
-                reshaped_label = torch.reshape(label, [batch_size, 9, 9])
+                reshaped_givens = torch.reshape(givens, [batch_size, 9, 9])
 
-                experiment.log_metric("Range accuracy", range_accuracy(assignment))
+                range_avg.update(range_accuracy(assignment))
+                givens_avg.update(givens_accuracy(assignment, reshaped_givens))
+                rows_avg.update(rows_accuracy(assignment))
+                columns_avg.update(columns_accuracy(assignment))
 
-                print("Step: ", step, "Avg. Loss:", (average_loss / 500.).cpu().numpy())
-                # print("Range accuracy: ", range_accuracy(assignment).cpu().detach().numpy())
-                print("Givens accuracy: ", givens_accuracy(assignment, reshaped_label.cuda()).cpu().detach().numpy())
-                print("Rows accuracy: ", rows_accuracy(assignment).cpu().detach().numpy())
-                print("Columns accuracy: ", columns_accuracy(assignment).cpu().detach().numpy())
-                print("Main vars  ", assignment[0, ...].cpu().detach().int().numpy())
-                print("Label      ", reshaped_label[0, ...].cpu().detach().int().numpy())
-                average_loss = 0
+            print(f"[step={current_step}],"
+                  f"[range_acc={range_avg.numpy_result}],"
+                  f"[givens_acc={givens_avg.numpy_result}],"
+                  f"[rows_acc={rows_avg.numpy_result}],"
+                  f"[col_acc={columns_avg.numpy_result}]")
 
-    # with experiment.test():
+            # Login in comet.ml dashboard
+            experiment.log_metric("range_acc", range_avg.result)
+            experiment.log_metric("givens_acc", givens_avg.result)
+            experiment.log_metric("rows_acc", rows_avg.result)
+            experiment.log_metric("columns_acc", columns_avg.result)
+
+    with experiment.test():
+        network.eval()
+        test_dataloader = DataLoader(test, batch_size=batch_size, shuffle=True, collate_fn=batch_graphs)
+
+        range_avg = AverageMetric()
+        givens_avg = AverageMetric()
+        rows_avg = AverageMetric()
+        columns_avg = AverageMetric()
+
+        for (adj_matrix, b_values), givens in test_dataloader:
+            assignment = network.forward(adj_matrix, b_values)[-1]
+            assignment = torch.sum(powers_of_two * assignment, dim=-1)
+            assignment = torch.round(assignment)
+
+            assignment = torch.reshape(assignment, [batch_size, 9, 9, 9])
+            assignment = torch.argmax(assignment, dim=-1) + 1
+
+            reshaped_givens = torch.reshape(givens, [batch_size, 9, 9])
+
+            range_avg.update(range_accuracy(assignment))
+            givens_avg.update(givens_accuracy(assignment, reshaped_givens))
+            rows_avg.update(rows_accuracy(assignment))
+            columns_avg.update(columns_accuracy(assignment))
+
+        print("\n\n\n------------------ TESTING ------------------\n")
+        print("Range accuracy: ", range_avg.numpy_result)
+        print("Givens accuracy: ", givens_avg.numpy_result)
+        print("Rows accuracy: ", rows_avg.numpy_result)
+        print("Columns accuracy: ", columns_avg.numpy_result)
+
+        # Login in comet.ml dashboard
+        experiment.log_metric("range_acc", range_avg.result)
+        experiment.log_metric("givens_acc", givens_avg.result)
+        experiment.log_metric("rows_acc", rows_avg.result)
+        experiment.log_metric("columns_acc", columns_avg.result)

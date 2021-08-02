@@ -24,7 +24,7 @@ class BinarySudokuDataset(Dataset):
     @staticmethod
     def _prepare_sudoku(data, dtype=torch.int32):
         data = [int(c) for c in data]
-        return torch.tensor(data, dtype=dtype)
+        return torch.tensor(data, dtype=dtype, device=torch.device('cuda:0'))
 
     def _prepare_mip(self, data):
         ip_inst = IPInstanceBuilder()
