@@ -1,9 +1,9 @@
+from comet_ml import Experiment
 import itertools
 import time
 from pathlib import Path
 
 import torch.sparse
-from comet_ml import Experiment
 from torch.utils.data import DataLoader
 from torch.utils.data import random_split
 
@@ -46,7 +46,7 @@ def relu1(inputs):
 
 if __name__ == '__main__':
 
-    experiment = Experiment(disabled=True)  # Set to True to disable logging in comet.ml
+    experiment = Experiment(disabled=False)  # Set to True to disable logging in comet.ml
 
     experiment.log_parameters({x: getattr(params, x) for x in dir(params) if not x.startswith("__")})
     experiment.log_code(folder=str(Path().resolve()))
@@ -55,9 +55,9 @@ if __name__ == '__main__':
     splits = [10000, 10000, len(dataset) - 20000]
     test, validation, train = random_split(dataset, splits, generator=torch.Generator().manual_seed(42))
     train_dataloader = DataLoader(train, batch_size=params.batch_size, shuffle=True, collate_fn=batch_graphs,
-                                  num_workers=4, prefetch_factor=4, persistent_workers=True)
+                                  num_workers=4, prefetch_factor=4, persistent_workers=True, drop_last=True)
     validation_dataloader = DataLoader(validation, batch_size=params.batch_size, shuffle=True, collate_fn=batch_graphs,
-                                       num_workers=4, prefetch_factor=4, persistent_workers=True)
+                                       num_workers=4, prefetch_factor=4, persistent_workers=True, drop_last=True)
 
     network = MIPNetwork(
         output_bits=params.bit_count,
@@ -92,7 +92,7 @@ if __name__ == '__main__':
                 for asn in assignments:
                     last_assignment = torch.sum(powers_of_two * asn, dim=-1, keepdim=True)
 
-                    l = relu1(torch.squeeze(torch.sparse.mm(adj_matrix.t(), last_assignment)) - b_values)
+                    l = torch.relu(torch.squeeze(torch.sparse.mm(adj_matrix.t(), last_assignment)) - b_values)
                     loss += torch.sum(l)
 
                 loss /= len(assignments)
@@ -150,7 +150,7 @@ if __name__ == '__main__':
         network.eval()
         torch.no_grad()
         test_dataloader = DataLoader(test, batch_size=params.batch_size, shuffle=True, collate_fn=batch_graphs,
-                                  num_workers=4, prefetch_factor=4, persistent_workers=True)
+                                     num_workers=4, prefetch_factor=4, persistent_workers=True, drop_last=True)
 
         sudoku_metric = SudokuMetric()
 
@@ -169,6 +169,7 @@ if __name__ == '__main__':
 
             reshaped_givens = torch.reshape(givens, [params.batch_size, 9, 9])
             reshaped_labels = torch.reshape(labels, [params.batch_size, 9, 9])
+
             sudoku_metric.update(assignment, reshaped_givens, reshaped_labels)
 
         results = sudoku_metric.numpy_result
