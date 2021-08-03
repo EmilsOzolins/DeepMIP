@@ -1,47 +1,41 @@
 import itertools
+import time
 from pathlib import Path
 
-import numpy as np
-from comet_ml import Experiment
 import torch.sparse
+from comet_ml import Experiment
 from torch.utils.data import DataLoader
 from torch.utils.data import random_split
 
+import hyperparams as params
 from data.sudoku_binary import BinarySudokuDataset
 from model.mip_network import MIPNetwork
-import hyperparams as params
 
 
 def batch_graphs(batch):
-    features = [x for x, _ in batch]
+    mip_instances, givens, labels = list(zip(*batch))
 
-    # TODO: Here I return input Sudoku, but in future change it to solution
-    labels = [x for _, x in batch]
-
-    adj_matrices = [x.coalesce() for x, _ in features]
-    const_values = [x for _, x in features]
-
-    indices = []
-    values = []
+    edge_indices = []
+    edge_values = []
+    constrain_values = []
 
     var_offset = 0
     const_offset = 0
 
-    for mat in adj_matrices:
-        ind = mat.indices()
-
+    for mip in mip_instances:
+        ind = mip.edge_indices
         ind[0, :] += var_offset
         ind[1, :] += const_offset
 
-        var_offset = torch.max(ind[0, :]) + 1
-        const_offset = torch.max(ind[1, :]) + 1
+        var_offset += mip.next_var_index
+        const_offset += mip.next_constraint_index
 
-        indices.append(ind)
-        values.append(mat.values())
+        edge_indices.append(ind)
+        edge_values.append(mip.edge_values)
+        constrain_values.append(mip.constraints_values)
 
-    batch_adj = torch.sparse_coo_tensor(torch.cat(indices, dim=-1), torch.cat(values, dim=-1))
-
-    return (batch_adj, torch.cat(const_values, dim=-1)), torch.cat(labels, dim=-1)
+    mip = torch.cat(edge_indices, dim=-1), torch.cat(edge_values, dim=-1), torch.cat(constrain_values, dim=-1)
+    return mip, torch.cat(givens, dim=-1), torch.cat(labels, dim=-1)
 
 
 def relu1(inputs):
@@ -124,7 +118,7 @@ class AverageMetric:
 
 if __name__ == '__main__':
 
-    experiment = Experiment(disabled=False)  # Set to True to disable logging in comet.ml
+    experiment = Experiment(disabled=True)  # Set to True to disable logging in comet.ml
 
     experiment.log_parameters({x: getattr(params, x) for x in dir(params) if not x.startswith("__")})
     experiment.log_code(folder=str(Path().resolve()))
@@ -132,8 +126,10 @@ if __name__ == '__main__':
     dataset = BinarySudokuDataset("binary/sudoku.csv")
     splits = [10000, 10000, len(dataset) - 20000]
     test, validation, train = random_split(dataset, splits, generator=torch.Generator().manual_seed(42))
-    train_dataloader = DataLoader(validation, batch_size=params.batch_size, shuffle=True, collate_fn=batch_graphs)
-    validation_dataloader = DataLoader(train, batch_size=params.batch_size, shuffle=True, collate_fn=batch_graphs)
+    train_dataloader = DataLoader(train, batch_size=params.batch_size, shuffle=True, collate_fn=batch_graphs,
+                                  num_workers=8, prefetch_factor=4, persistent_workers=True)
+    validation_dataloader = DataLoader(validation, batch_size=params.batch_size, shuffle=True, collate_fn=batch_graphs,
+                                       num_workers=8, prefetch_factor=4, persistent_workers=True)
 
     network = MIPNetwork(
         output_bits=params.bit_count,
@@ -150,9 +146,16 @@ if __name__ == '__main__':
     while current_step < params.train_steps:
 
         with experiment.train():
+            start = time.time()
+
             network.train()
             loss_avg = AverageMetric()
-            for (adj_matrix, b_values), givens in itertools.islice(train_dataloader, 1000):
+            for (edge_indices, edge_values, b_values), givens, labels in itertools.islice(train_dataloader, 1000):
+                adj_matrix = torch.sparse_coo_tensor(edge_indices, edge_values, device=torch.device('cuda:0'))
+                b_values = b_values.cuda()
+                givens = givens.cuda()
+                labels = labels.cuda()
+
                 optimizer.zero_grad()
                 assignments = network.forward(adj_matrix, b_values)
 
@@ -170,9 +173,10 @@ if __name__ == '__main__':
                 loss.backward()
                 optimizer.step()
                 current_step += 1
+
                 experiment.log_metric("loss", loss)
 
-            print(f"Step {current_step} avg loss: ", loss_avg.numpy_result)
+            print(f"Step {current_step} avg loss: {loss_avg.numpy_result:.4f} elapsed time {time.time() - start:0.3f}s")
 
         # TODO: Implement saving to checkpoint - model, optimizer and steps
         # TODO: Implement training, validating and tasting from checkpoint
@@ -185,7 +189,12 @@ if __name__ == '__main__':
             rows_avg = AverageMetric()
             columns_avg = AverageMetric()
 
-            for (adj_matrix, b_values), givens in itertools.islice(validation_dataloader, 100):
+            for (edge_indices, edge_values, b_values), givens, labels in itertools.islice(validation_dataloader, 100):
+                adj_matrix = torch.sparse_coo_tensor(edge_indices, edge_values, device=torch.device('cuda:0'))
+                b_values = b_values.cuda()
+                givens = givens.cuda()
+                labels = labels.cuda()
+
                 assignment = network.forward(adj_matrix, b_values)[-1]
                 assignment = torch.sum(powers_of_two * assignment, dim=-1)
                 assignment = torch.round(assignment)
@@ -221,7 +230,12 @@ if __name__ == '__main__':
         rows_avg = AverageMetric()
         columns_avg = AverageMetric()
 
-        for (adj_matrix, b_values), givens in test_dataloader:
+        for (edge_indices, edge_values, b_values), givens, labels in test_dataloader:
+            adj_matrix = torch.sparse_coo_tensor(edge_indices, edge_values, device=torch.device('cuda:0'))
+            b_values = b_values.cuda()
+            givens = givens.cuda()
+            labels = labels.cuda()
+
             assignment = network.forward(adj_matrix, b_values)[-1]
             assignment = torch.sum(powers_of_two * assignment, dim=-1)
             assignment = torch.round(assignment)

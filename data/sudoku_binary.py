@@ -1,9 +1,9 @@
 import pandas as pd
-import torch
 from torch.utils.data.dataset import Dataset, T_co
 
 # TODO: Rewrite this using PyTorch geometric - it already has batching and stuff for graphs
-from data.integer_programming_instance import IPInstanceBuilder
+from data.integer_programming_instance import IPInstance
+import torch
 
 
 class BinarySudokuDataset(Dataset):
@@ -15,19 +15,18 @@ class BinarySudokuDataset(Dataset):
 
     def __getitem__(self, index) -> T_co:
         x = self.features[index]
-        x = self._prepare_sudoku(x)
-        y = self.labels[index]
-        y = self._prepare_sudoku(y)
+        givens = self._prepare_sudoku(x)
+        label = self.labels[index]
+        label = self._prepare_sudoku(label)
 
-        return self._prepare_mip(x), x
+        return self._prepare_mip(givens), torch.tensor(givens), torch.tensor(label)
 
     @staticmethod
-    def _prepare_sudoku(data, dtype=torch.int32):
-        data = [int(c) for c in data]
-        return torch.tensor(data, dtype=dtype, device=torch.device('cuda:0'))
+    def _prepare_sudoku(data):
+        return [int(c) for c in data]
 
     def _prepare_mip(self, data):
-        ip_inst = IPInstanceBuilder()
+        ip_inst = IPInstance()
 
         # At least one number should be selected in the field
         for i in range(9):
@@ -68,7 +67,7 @@ class BinarySudokuDataset(Dataset):
                     multipliers = [1] * len(variables)
                     ip_inst = ip_inst.equal(variables, multipliers, 1)
 
-        return ip_inst.create()
+        return ip_inst
 
     @staticmethod
     def _calc_index(x, y, z) -> int:

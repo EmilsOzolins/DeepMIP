@@ -1,9 +1,10 @@
+from collections import namedtuple
 from typing import List
 
 import torch
 
 
-class IPInstanceBuilder:
+class IPInstance:
     """
     Builds Integer Programming instance from individual constraints.
     """
@@ -13,11 +14,12 @@ class IPInstanceBuilder:
         self._multipliers = []
         self._right_side_values = []
         self._current_constraint_index = 0
+        self._max_var_index = 0
 
     def greater_or_equal(self, variable_indices: List[int],
                          variable_multipliers: List[float],
                          right_side_value: float
-                         ) -> 'IPInstanceBuilder':
+                         ) -> 'IPInstance':
         """
         Adds greater or equal constraint to the instance.
         Accepts constraint in the form a_0 * x_0 + a_1 * x_1 + ... + a_i * x_i >= b , where:
@@ -35,7 +37,7 @@ class IPInstanceBuilder:
     def less_or_equal(self, variable_indices: List[int],
                       variable_multipliers: List[float],
                       right_side_value: float
-                      ) -> 'IPInstanceBuilder':
+                      ) -> 'IPInstance':
         """
         Adds less or equal constraint to the instance.
         Accepts constraint in the form a_0 * x_0 + a_1 * x_1 + ... + a_i * x_i <= b , where:
@@ -43,6 +45,8 @@ class IPInstanceBuilder:
          * variable_indices are vector of variable indices that are present in constraint
          * b is right_side_value.
         """
+        self._max_var_index = max(max(variable_indices), self._max_var_index)
+
         for idx, a in zip(variable_indices, variable_multipliers):
             self._indices.append((idx, self._current_constraint_index))
             self._multipliers.append(a)
@@ -57,7 +61,7 @@ class IPInstanceBuilder:
     def equal(self, variable_indices: List[int],
               variable_multipliers: List[float],
               right_side_value: float
-              ) -> 'IPInstanceBuilder':
+              ) -> 'IPInstance':
         """
         Adds equal constraint to the instance.
         Accepts constraint in the form a_0 * x_0 + a_1 * x_1 + ... + a_i * x_i = b , where:
@@ -69,19 +73,24 @@ class IPInstanceBuilder:
         self.greater_or_equal(variable_indices, variable_multipliers, right_side_value)
         return self
 
-    def create(self, device=torch.device('cuda:0')):
-        """
-        Encodes the instance as adjacency matrix of factor graph and right sight as scalar feature vector.
-        Method returns PyTorch tensors placed on the device.
-        """
+    @property
+    def edge_indices(self):
         i = [x for x, _ in self._indices]
         j = [x for _, x in self._indices]
+        return torch.tensor([i, j])
 
-        adj_matrix = torch.sparse_coo_tensor(
-            torch.tensor([i, j]),
-            torch.tensor(self._multipliers),
-            dtype=torch.float32,
-            device=device
-        )
+    @property
+    def edge_values(self):
+        return torch.tensor(self._multipliers, dtype=torch.float32)
 
-        return adj_matrix, torch.tensor(self._right_side_values, dtype=torch.float32, device=device)
+    @property
+    def constraints_values(self):
+        return torch.tensor(self._right_side_values, dtype=torch.float32)
+
+    @property
+    def next_var_index(self):
+        return self._max_var_index + 1
+
+    @property
+    def next_constraint_index(self):
+        return self._current_constraint_index
