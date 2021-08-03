@@ -19,7 +19,7 @@ class BinarySudokuDataset(Dataset):
         label = self.labels[index]
         label = self._prepare_sudoku(label)
 
-        return self._prepare_mip(givens), torch.tensor(givens), torch.tensor(label)
+        return self._prepare_mip(givens), torch.as_tensor(givens), torch.as_tensor(label)
 
     @staticmethod
     def _prepare_sudoku(data):

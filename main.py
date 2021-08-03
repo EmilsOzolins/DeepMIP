@@ -9,6 +9,8 @@ from torch.utils.data import random_split
 
 import hyperparams as params
 from data.sudoku_binary import BinarySudokuDataset
+from metrics.average_metrics import AverageMetric
+from metrics.sudoku_metrics import SudokuMetric
 from model.mip_network import MIPNetwork
 
 
@@ -42,80 +44,6 @@ def relu1(inputs):
     return torch.clamp(inputs, 0, 1)
 
 
-def rows_accuracy(inputs):
-    """ Expect 3D tensor with dimensions [batch_size, 9, 9] with integer values
-    """
-
-    batch, r, c = inputs.size()
-    result = torch.ones([batch, r], device=inputs.device)
-    for i in range(1, 10, 1):
-        value = torch.sum(torch.eq(inputs, i).int(), dim=-1)
-        value = torch.clamp(value, 0, 1)
-        result = result * value
-
-    result = torch.mean(result.float(), dim=-1)
-    return torch.mean(result)
-
-
-def columns_accuracy(inputs):
-    """ Expect 3D tensor with dimensions [batch_size, 9, 9] with integer values
-    """
-    batch, r, c = inputs.size()
-    result = torch.ones([batch, r], device=inputs.device)
-    for i in range(1, 10, 1):
-        value = torch.sum(torch.eq(inputs, i).int(), dim=-2)
-        value = torch.clamp(value, 0, 1)
-        result = result * value
-
-    result = torch.mean(result.float(), dim=-1)
-    return torch.mean(result)
-
-
-def sub_square_accuracy(inputs):
-    pass
-
-
-def givens_accuracy(inputs, givens):
-    mask = torch.clamp(givens, 0, 1)
-    el_equal = torch.eq(mask * inputs, givens) * mask
-    per_batch = torch.mean(el_equal.float(), dim=[-2, -1])
-    return torch.mean(per_batch)
-
-
-def range_accuracy(inputs):
-    geq = torch.greater_equal(inputs, 1)
-    leq = torch.less_equal(inputs, 9)
-    result = torch.logical_and(geq, leq)
-    return torch.mean(torch.mean(result.float(), dim=[-2, -1]))
-
-
-def full_accuracy(inputs, givens):
-    pass
-
-
-def discrete_accuracy(inputs):
-    pass
-
-
-class AverageMetric:
-
-    def __init__(self) -> None:
-        self._value = 0
-        self._count = 0
-
-    @property
-    def result(self):
-        return self._value
-
-    @property
-    def numpy_result(self):
-        return self._value.detach().cpu().numpy()
-
-    def update(self, new_value) -> None:
-        self._count += 1
-        self._value += (new_value - self._value) / self._count
-
-
 if __name__ == '__main__':
 
     experiment = Experiment(disabled=True)  # Set to True to disable logging in comet.ml
@@ -127,9 +55,9 @@ if __name__ == '__main__':
     splits = [10000, 10000, len(dataset) - 20000]
     test, validation, train = random_split(dataset, splits, generator=torch.Generator().manual_seed(42))
     train_dataloader = DataLoader(train, batch_size=params.batch_size, shuffle=True, collate_fn=batch_graphs,
-                                  num_workers=8, prefetch_factor=4, persistent_workers=True)
+                                  num_workers=4, prefetch_factor=4, persistent_workers=True)
     validation_dataloader = DataLoader(validation, batch_size=params.batch_size, shuffle=True, collate_fn=batch_graphs,
-                                       num_workers=8, prefetch_factor=4, persistent_workers=True)
+                                       num_workers=4, prefetch_factor=4, persistent_workers=True)
 
     network = MIPNetwork(
         output_bits=params.bit_count,
@@ -139,16 +67,16 @@ if __name__ == '__main__':
     optimizer = torch.optim.Adam(network.parameters(), lr=0.0001)
 
     # TODO: Move this to model
-    powers_of_two = torch.tensor([2 ** k for k in range(0, params.bit_count)], dtype=torch.float32,
-                                 device=torch.device('cuda:0'))
+    powers_of_two = torch.as_tensor([2 ** k for k in range(0, params.bit_count)], dtype=torch.float32,
+                                    device=torch.device('cuda:0'))
 
     current_step = 0
     while current_step < params.train_steps:
 
         with experiment.train():
             start = time.time()
-
             network.train()
+            torch.enable_grad()
             loss_avg = AverageMetric()
             for (edge_indices, edge_values, b_values), givens, labels in itertools.islice(train_dataloader, 1000):
                 adj_matrix = torch.sparse_coo_tensor(edge_indices, edge_values, device=torch.device('cuda:0'))
@@ -168,7 +96,7 @@ if __name__ == '__main__':
                     loss += torch.sum(l)
 
                 loss /= len(assignments)
-                loss_avg.update(loss)
+                loss_avg.update({"loss": loss})
 
                 loss.backward()
                 optimizer.step()
@@ -176,18 +104,16 @@ if __name__ == '__main__':
 
                 experiment.log_metric("loss", loss)
 
-            print(f"Step {current_step} avg loss: {loss_avg.numpy_result:.4f} elapsed time {time.time() - start:0.3f}s")
+            print(
+                f"Step {current_step} avg loss: {loss_avg.numpy_result['loss']:.4f} elapsed time {time.time() - start:0.3f}s")
 
         # TODO: Implement saving to checkpoint - model, optimizer and steps
         # TODO: Implement training, validating and tasting from checkpoint
 
         with experiment.validate():
             network.eval()
-
-            range_avg = AverageMetric()
-            givens_avg = AverageMetric()
-            rows_avg = AverageMetric()
-            columns_avg = AverageMetric()
+            torch.no_grad()
+            sudoku_metric = SudokuMetric()
 
             for (edge_indices, edge_values, b_values), givens, labels in itertools.islice(validation_dataloader, 100):
                 adj_matrix = torch.sparse_coo_tensor(edge_indices, edge_values, device=torch.device('cuda:0'))
@@ -203,32 +129,30 @@ if __name__ == '__main__':
                 assignment = torch.argmax(assignment, dim=-1) + 1
 
                 reshaped_givens = torch.reshape(givens, [params.batch_size, 9, 9])
+                reshaped_labels = torch.reshape(labels, [params.batch_size, 9, 9])
 
-                range_avg.update(range_accuracy(assignment))
-                givens_avg.update(givens_accuracy(assignment, reshaped_givens))
-                rows_avg.update(rows_accuracy(assignment))
-                columns_avg.update(columns_accuracy(assignment))
+                sudoku_metric.update(assignment, reshaped_givens, reshaped_labels)
 
+            results = sudoku_metric.numpy_result
             print(f"[step={current_step}]",
-                  f"[range_acc={range_avg.numpy_result:.4f}]",
-                  f"[givens_acc={givens_avg.numpy_result:.4f}]",
-                  f"[rows_acc={rows_avg.numpy_result:.4f}]",
-                  f"[col_acc={columns_avg.numpy_result:.4f}]")
+                  f"[range_acc={results['range_acc']:.4f}]",
+                  f"[givens_acc={results['givens_acc']:.4f}]",
+                  f"[rows_acc={results['rows_acc']:.4f}]",
+                  f"[col_acc={results['col_acc']:.4f}]")
 
             # Login in comet.ml dashboard
-            experiment.log_metric("range_acc", range_avg.result)
-            experiment.log_metric("givens_acc", givens_avg.result)
-            experiment.log_metric("rows_acc", rows_avg.result)
-            experiment.log_metric("columns_acc", columns_avg.result)
+            experiment.log_metric("range_acc", results['range_acc'])
+            experiment.log_metric("givens_acc", results['givens_acc'])
+            experiment.log_metric("rows_acc", results['rows_acc'])
+            experiment.log_metric("columns_acc", results['col_acc'])
 
     with experiment.test():
         network.eval()
-        test_dataloader = DataLoader(test, batch_size=params.batch_size, shuffle=True, collate_fn=batch_graphs)
+        torch.no_grad()
+        test_dataloader = DataLoader(test, batch_size=params.batch_size, shuffle=True, collate_fn=batch_graphs,
+                                  num_workers=4, prefetch_factor=4, persistent_workers=True)
 
-        range_avg = AverageMetric()
-        givens_avg = AverageMetric()
-        rows_avg = AverageMetric()
-        columns_avg = AverageMetric()
+        sudoku_metric = SudokuMetric()
 
         for (edge_indices, edge_values, b_values), givens, labels in test_dataloader:
             adj_matrix = torch.sparse_coo_tensor(edge_indices, edge_values, device=torch.device('cuda:0'))
@@ -244,20 +168,19 @@ if __name__ == '__main__':
             assignment = torch.argmax(assignment, dim=-1) + 1
 
             reshaped_givens = torch.reshape(givens, [params.batch_size, 9, 9])
+            reshaped_labels = torch.reshape(labels, [params.batch_size, 9, 9])
+            sudoku_metric.update(assignment, reshaped_givens, reshaped_labels)
 
-            range_avg.update(range_accuracy(assignment))
-            givens_avg.update(givens_accuracy(assignment, reshaped_givens))
-            rows_avg.update(rows_accuracy(assignment))
-            columns_avg.update(columns_accuracy(assignment))
+        results = sudoku_metric.numpy_result
 
         print("\n\n\n------------------ TESTING ------------------\n")
-        print("Range accuracy: ", range_avg.numpy_result)
-        print("Givens accuracy: ", givens_avg.numpy_result)
-        print("Rows accuracy: ", rows_avg.numpy_result)
-        print("Columns accuracy: ", columns_avg.numpy_result)
+        print("Range accuracy: ", results['range_acc'])
+        print("Givens accuracy: ", results['givens_acc'])
+        print("Rows accuracy: ", results['rows_acc'])
+        print("Columns accuracy: ", results['col_acc'])
 
         # Login in comet.ml dashboard
-        experiment.log_metric("range_acc", range_avg.result)
-        experiment.log_metric("givens_acc", givens_avg.result)
-        experiment.log_metric("rows_acc", rows_avg.result)
-        experiment.log_metric("columns_acc", columns_avg.result)
+        experiment.log_metric("range_acc", results['range_acc'])
+        experiment.log_metric("givens_acc", results['givens_acc'])
+        experiment.log_metric("rows_acc", results['rows_acc'])
+        experiment.log_metric("columns_acc", results['col_acc'])

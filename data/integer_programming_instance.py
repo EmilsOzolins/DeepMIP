@@ -1,4 +1,3 @@
-from collections import namedtuple
 from typing import List
 
 import torch
@@ -77,15 +76,15 @@ class IPInstance:
     def edge_indices(self):
         i = [x for x, _ in self._indices]
         j = [x for _, x in self._indices]
-        return torch.tensor([i, j])
+        return torch.as_tensor([i, j])
 
     @property
     def edge_values(self):
-        return torch.tensor(self._multipliers, dtype=torch.float32)
+        return torch.as_tensor(self._multipliers, dtype=torch.float32)
 
     @property
     def constraints_values(self):
-        return torch.tensor(self._right_side_values, dtype=torch.float32)
+        return torch.as_tensor(self._right_side_values, dtype=torch.float32)
 
     @property
     def next_var_index(self):
