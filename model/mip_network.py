@@ -8,7 +8,7 @@ from model.normalization import PairNorm
 
 class MIPNetwork(torch.nn.Module):
 
-    def __init__(self, output_bits, feature_maps=64, pass_steps=1):
+    def __init__(self, output_bits, feature_maps=64, pass_steps=3):
         super().__init__()
 
         self.feature_maps = feature_maps
@@ -23,20 +23,20 @@ class MIPNetwork(torch.nn.Module):
 
         self.variable_update = nn.Sequential(
             nn.Linear(self.feature_maps * 2, self.feature_maps),
-            nn.LeakyReLU(),
+            nn.ReLU(),
             nn.Linear(self.feature_maps, self.feature_maps),
             PairNorm()
         )
 
         self.output = nn.Sequential(
             nn.Linear(self.feature_maps, self.feature_maps),
-            nn.LeakyReLU(),
+            nn.ReLU(),
             nn.Linear(self.feature_maps, output_bits)
         )
 
         self.prepare_cond = nn.Sequential(
             nn.Linear(1, self.feature_maps),
-            nn.LeakyReLU(),
+            nn.ReLU(),
             nn.Linear(self.feature_maps, self.feature_maps),
             PairNorm()
         )

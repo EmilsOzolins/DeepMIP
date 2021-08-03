@@ -1,7 +1,7 @@
 import itertools
 from pathlib import Path
 
-import numpy
+import numpy as np
 from comet_ml import Experiment
 import torch.sparse
 from torch.utils.data import DataLoader
@@ -123,15 +123,8 @@ class AverageMetric:
 
 
 if __name__ == '__main__':
-    numpy.set_printoptions(precision=3)
 
-    experiment = Experiment(
-        auto_metric_logging=True,
-        auto_param_logging=True,
-        auto_histogram_weight_logging=True,
-        auto_histogram_activation_logging=True,
-        auto_histogram_gradient_logging=True,
-        disabled=False)  # Set to True to disable logging in comet.ml
+    experiment = Experiment(disabled=False)  # Set to True to disable logging in comet.ml
 
     experiment.log_parameters({x: getattr(params, x) for x in dir(params) if not x.startswith("__")})
     experiment.log_code(folder=str(Path().resolve()))
@@ -208,10 +201,10 @@ if __name__ == '__main__':
                 columns_avg.update(columns_accuracy(assignment))
 
             print(f"[step={current_step}]",
-                  f"[range_acc={range_avg.numpy_result}]",
-                  f"[givens_acc={givens_avg.numpy_result}]",
-                  f"[rows_acc={rows_avg.numpy_result}]",
-                  f"[col_acc={columns_avg.numpy_result}]")
+                  f"[range_acc={range_avg.numpy_result:.4f}]",
+                  f"[givens_acc={givens_avg.numpy_result:.4f}]",
+                  f"[rows_acc={rows_avg.numpy_result:.4f}]",
+                  f"[col_acc={columns_avg.numpy_result:.4f}]")
 
             # Login in comet.ml dashboard
             experiment.log_metric("range_acc", range_avg.result)
