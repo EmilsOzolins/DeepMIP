@@ -17,7 +17,7 @@ class SudokuMetric(AverageMetric):
              "givens_acc": self._givens_accuracy(prediction, givens),
              "range_acc": self._range_accuracy(prediction),
              "square_acc": self._subsquare_accuracy(prediction),
-             "full_acc:": self._full_accuracy(prediction, solution)
+             "full_acc": self._full_accuracy(prediction, solution)
              }
         )
 

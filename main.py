@@ -58,6 +58,7 @@ def main():
                   f"[rows_acc={results['rows_acc']:.4f}]",
                   f"[col_acc={results['col_acc']:.4f}]",
                   f"[square_acc={results['square_acc']:.4f}]",
+                  f"[full_acc={results['full_acc']:.4f}]",
                   )
 
             # Login in comet.ml dashboard
@@ -66,6 +67,7 @@ def main():
             experiment.log_metric("rows_acc", results['rows_acc'])
             experiment.log_metric("columns_acc", results['col_acc'])
             experiment.log_metric("square_acc", results['square_acc'])
+            experiment.log_metric("full_acc", results['full_acc'])
 
     with experiment.test():
         network.eval()
@@ -80,6 +82,7 @@ def main():
         print("Rows accuracy: ", results['rows_acc'])
         print("Columns accuracy: ", results['col_acc'])
         print("Sub-squares accuracy: ", results['square_acc'])
+        print("Full accuracy: ", results['full_acc'])
 
         # Login in comet.ml dashboard
         experiment.log_metric("range_acc", results['range_acc'])
@@ -87,6 +90,7 @@ def main():
         experiment.log_metric("rows_acc", results['rows_acc'])
         experiment.log_metric("columns_acc", results['col_acc'])
         experiment.log_metric("square_acc", results['square_acc'])
+        experiment.log_metric("full_acc", results['full_acc'])
 
 
 def train(train_steps, experiment, network, optimizer, train_dataloader):
@@ -103,7 +107,7 @@ def train(train_steps, experiment, network, optimizer, train_dataloader):
         loss = 0
         for asn in decimal_assignments:
             l = torch.relu(torch.squeeze(torch.sparse.mm(adj_matrix.t(), asn)) - b_values)
-            l = torch.square(l)
+            # l = torch.square(l)
             loss += torch.sum(l)
 
         loss /= len(decimal_assignments)
