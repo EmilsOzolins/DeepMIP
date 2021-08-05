@@ -3,6 +3,8 @@ import torch
 from metrics.average_metrics import AverageMetric
 
 
+# TODO: Make Metric holder, where several metrics can be stored together
+
 class SudokuMetric(AverageMetric):
 
     def __init__(self) -> None:
