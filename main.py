@@ -16,7 +16,7 @@ from utils.data import batch_graphs
 
 
 def main():
-    experiment = Experiment(disabled=True)  # Set to True to disable logging in comet.ml
+    experiment = Experiment(disabled=False)  # Set to True to disable logging in comet.ml
     experiment.log_parameters({x: getattr(params, x) for x in dir(params) if not x.startswith("__")})
     experiment.log_code(folder=str(Path().resolve()))
 
@@ -53,17 +53,19 @@ def main():
             results = evaluate_model(network, itertools.islice(validation_dataloader, 100))
 
             # TODO: Get rid of this logging, it is not important
-            print(f"[step={current_step}]",
-                  f"[range_acc={results['range_acc']:.4f}]",
+            print(f"[range_acc={results['range_acc']:.4f}]",
                   f"[givens_acc={results['givens_acc']:.4f}]",
                   f"[rows_acc={results['rows_acc']:.4f}]",
-                  f"[col_acc={results['col_acc']:.4f}]")
+                  f"[col_acc={results['col_acc']:.4f}]",
+                  f"[square_acc={results['square_acc']:.4f}]",
+                  )
 
             # Login in comet.ml dashboard
             experiment.log_metric("range_acc", results['range_acc'])
             experiment.log_metric("givens_acc", results['givens_acc'])
             experiment.log_metric("rows_acc", results['rows_acc'])
             experiment.log_metric("columns_acc", results['col_acc'])
+            experiment.log_metric("square_acc", results['square_acc'])
 
     with experiment.test():
         network.eval()
@@ -77,12 +79,14 @@ def main():
         print("Givens accuracy: ", results['givens_acc'])
         print("Rows accuracy: ", results['rows_acc'])
         print("Columns accuracy: ", results['col_acc'])
+        print("Sub-squares accuracy: ", results['square_acc'])
 
         # Login in comet.ml dashboard
         experiment.log_metric("range_acc", results['range_acc'])
         experiment.log_metric("givens_acc", results['givens_acc'])
         experiment.log_metric("rows_acc", results['rows_acc'])
         experiment.log_metric("columns_acc", results['col_acc'])
+        experiment.log_metric("square_acc", results['square_acc'])
 
 
 def train(train_steps, experiment, network, optimizer, train_dataloader):

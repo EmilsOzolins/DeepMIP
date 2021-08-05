@@ -54,7 +54,24 @@ class SudokuMetric(AverageMetric):
 
     @staticmethod
     def _subsquare_accuracy(inputs):
-        return torch.mean(torch.zeros_like(inputs), dtype=torch.float32)
+
+        batch, r, c = inputs.size()
+        squares = []
+        for p in range(0, 3):
+            for q in range(0, 3):
+                subsquare = inputs[:, p * 3:(1 + p) * 3, q * 3:(1 + q) * 3]
+                squares.append(torch.reshape(subsquare, [batch, r]))
+
+        squares = torch.stack(squares, dim=-1)
+        result = torch.ones([batch, r], device=inputs.device)
+
+        for i in range(1, 10, 1):
+            value = torch.sum(torch.eq(squares, i).int(), dim=-1)
+            value = torch.clamp(value, 0, 1)
+            result = result * value
+
+        result = torch.mean(result.float(), dim=-1)
+        return torch.mean(result)
 
     @staticmethod
     def _givens_accuracy(inputs, givens):
