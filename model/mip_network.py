@@ -1,9 +1,7 @@
-
 import torch
 import torch.nn as nn
 
 from model.normalization import PairNorm
-
 
 
 class MIPNetwork(torch.nn.Module):
@@ -44,6 +42,8 @@ class MIPNetwork(torch.nn.Module):
         self.noise = torch.distributions.Normal(0, 3)
 
         self.step = 0
+        self.powers_of_two = torch.as_tensor([2 ** k for k in range(0, output_bits)], dtype=torch.float32,
+                                             device=torch.device('cuda:0'))
 
     def forward(self, adj_matrix: torch.sparse.Tensor, conditions_values: torch.Tensor):
         """
@@ -55,7 +55,8 @@ class MIPNetwork(torch.nn.Module):
         variables = torch.ones([var_count, self.feature_maps], device=torch.device('cuda:0'))
         constraints = emb_value = self.prepare_cond(torch.unsqueeze(conditions_values, dim=-1))
 
-        outputs = []
+        binary_outputs = []
+        decimal_outputs = []
 
         for i in range(self.pass_steps):
             var2const_msg = torch.mm(adj_matrix.t(), variables)
@@ -69,9 +70,11 @@ class MIPNetwork(torch.nn.Module):
             out_vars = self.output(variables)
             out = torch.sigmoid(out_vars + self.noise.sample(out_vars.size()).cuda())
 
-            outputs.append(out)
+            binary_outputs.append(out)
+            decimal_pred = torch.sum(self.powers_of_two * out, dim=-1, keepdim=True)
+            decimal_outputs.append(decimal_pred)
 
             constraints = constraints.detach() * 0.2 + constraints * 0.8
             variables = variables.detach() * 0.2 + variables * 0.8
 
-        return outputs
+        return binary_outputs, decimal_outputs
