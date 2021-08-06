@@ -77,7 +77,7 @@ class SudokuMetric(AverageMetric):
     def _givens_accuracy(inputs, givens):
         mask = torch.clamp(givens, 0, 1)
         el_equal = torch.eq(mask * inputs, givens) * mask
-        per_batch = torch.mean(el_equal.float(), dim=[-2, -1])
+        per_batch = torch.sum(el_equal.float(), dim=[-2, -1]) / torch.sum(mask, dim=[-2, -1])
         return torch.mean(per_batch)
 
     @staticmethod
