@@ -39,7 +39,7 @@ class BinarySudokuDataset(Dataset):
                 else:  # Only one element should be set to 1
                     variables = [self._calc_index(i, j, k) for k in range(9)]
                     multipliers = [1] * len(variables)
-                    ip_inst = ip_inst.equal(variables, multipliers, 0)
+                    ip_inst = ip_inst.equal(variables, multipliers, 1)
 
         # All elements in single column should be different
         for j in range(9):
