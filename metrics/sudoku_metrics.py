@@ -62,7 +62,7 @@ class SudokuMetric(AverageMetric):
                 subsquare = inputs[:, p * 3:(1 + p) * 3, q * 3:(1 + q) * 3]
                 squares.append(torch.reshape(subsquare, [batch, r]))
 
-        squares = torch.stack(squares, dim=-1)
+        squares = torch.stack(squares, dim=-2)
         result = torch.ones([batch, r], device=inputs.device)
 
         for i in range(1, 10, 1):

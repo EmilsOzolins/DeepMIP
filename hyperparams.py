@@ -8,6 +8,6 @@ batch_size = 32
 learning_rate = 0.0001
 
 # Model
-recurrent_steps = 10
+recurrent_steps = 8
 feature_maps = 64
 bit_count = 1
