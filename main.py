@@ -1,9 +1,9 @@
-from comet_ml import Experiment
 import itertools
 import time
 from pathlib import Path
 
 import torch.sparse
+from comet_ml import Experiment
 from torch.utils.data import DataLoader
 from torch.utils.data import random_split
 
@@ -13,10 +13,11 @@ from metrics.average_metrics import AverageMetric
 from metrics.sudoku_metrics import SudokuMetric
 from model.mip_network import MIPNetwork
 from utils.data import batch_graphs
+import config
 
 
 def main():
-    experiment = Experiment(disabled=False)  # Set to True to disable logging in comet.ml
+    experiment = Experiment(disabled=True)  # Set to True to disable logging in comet.ml
     experiment.log_parameters({x: getattr(params, x) for x in dir(params) if not x.startswith("__")})
     experiment.log_code(folder=str(Path().resolve()))
 
@@ -31,7 +32,7 @@ def main():
         feature_maps=params.feature_maps,
         pass_steps=params.recurrent_steps
     ).cuda()
-    optimizer = torch.optim.Adam(network.parameters(), lr=0.0001)
+    optimizer = torch.optim.Adam(network.parameters(), lr=params.learning_rate)
 
     current_step = 0
     train_steps = 1000
@@ -97,8 +98,8 @@ def train(train_steps, experiment, network, optimizer, train_dataloader):
     start = time.time()
     loss_avg = AverageMetric()
 
-    for (edge_indices, edge_values, b_values), givens, labels in itertools.islice(train_dataloader, train_steps):
-        adj_matrix = torch.sparse_coo_tensor(edge_indices, edge_values, device=torch.device('cuda:0'))
+    for (edge_indices, edge_values, b_values, size), givens, labels in itertools.islice(train_dataloader, train_steps):
+        adj_matrix = torch.sparse_coo_tensor(edge_indices, edge_values, size=size, device=torch.device('cuda:0'))
         b_values = b_values.cuda()
 
         optimizer.zero_grad()
@@ -122,21 +123,29 @@ def train(train_steps, experiment, network, optimizer, train_dataloader):
 
 
 def create_data_loader(test):
-    return DataLoader(test,
-                      batch_size=params.batch_size,
-                      shuffle=True,
-                      collate_fn=batch_graphs,
-                      num_workers=4,
-                      prefetch_factor=4,
-                      persistent_workers=True,
-                      drop_last=True
-                      )
+    if config.debugging_enabled:
+        return DataLoader(test,
+                          batch_size=params.batch_size,
+                          shuffle=True,
+                          collate_fn=batch_graphs,
+                          drop_last=True
+                          )
+    else:
+        return DataLoader(test,
+                          batch_size=params.batch_size,
+                          shuffle=True,
+                          collate_fn=batch_graphs,
+                          num_workers=4,
+                          prefetch_factor=4,
+                          persistent_workers=True,
+                          drop_last=True
+                          )
 
 
 def evaluate_model(network, test_dataloader):
     sudoku_metric = SudokuMetric()
-    for (edge_indices, edge_values, b_values), givens, labels in test_dataloader:
-        adj_matrix = torch.sparse_coo_tensor(edge_indices, edge_values, device=torch.device('cuda:0'))
+    for (edge_indices, edge_values, b_values, size), givens, labels in test_dataloader:
+        adj_matrix = torch.sparse_coo_tensor(edge_indices, edge_values, size=size, device=torch.device('cuda:0'))
         b_values = b_values.cuda()
         givens = givens.cuda()
         labels = labels.cuda()
@@ -153,6 +162,10 @@ def evaluate_model(network, test_dataloader):
         reshaped_labels = torch.reshape(labels, [params.batch_size, 9, 9])
 
         sudoku_metric.update(assignment, reshaped_givens, reshaped_labels)
+
+    # print(torch.reshape(binary_assignments[-1], [params.batch_size, 9, 9, 9]).detach().cpu().numpy())
+    print(assignment.cpu().numpy()[-1, ...])
+    print(reshaped_givens.cpu().numpy()[-1, ...])
 
     return sudoku_metric.numpy_result
 

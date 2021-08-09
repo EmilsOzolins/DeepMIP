@@ -8,12 +8,12 @@ class IPInstance:
     Builds Integer Programming instance from individual constraints.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, variable_count=None) -> None:
         self._indices = []
         self._multipliers = []
         self._right_side_values = []
         self._current_constraint_index = 0
-        self._max_var_index = 0
+        self._max_var_index = variable_count - 1 if variable_count else 0
 
     def greater_or_equal(self, variable_indices: List[int],
                          variable_multipliers: List[float],
@@ -93,3 +93,7 @@ class IPInstance:
     @property
     def next_constraint_index(self):
         return self._current_constraint_index
+
+    @property
+    def size(self):
+        return self.next_var_index, self.next_constraint_index

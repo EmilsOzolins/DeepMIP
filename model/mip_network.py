@@ -14,7 +14,7 @@ class MIPNetwork(torch.nn.Module):
 
         self.constraint_update = nn.Sequential(
             nn.Linear(self.feature_maps * 3, self.feature_maps),
-            nn.LeakyReLU(),
+            nn.ReLU(),
             nn.Linear(self.feature_maps, self.feature_maps),
             PairNorm()
         )
