@@ -15,6 +15,7 @@ from metrics.discreate_metric import DiscretizationMetric
 from metrics.sudoku_metrics import SudokuMetric
 from model.mip_network import MIPNetwork
 from utils.data import batch_graphs
+from utils.display import format_metrics
 
 
 def main():
@@ -44,11 +45,7 @@ def main():
             torch.enable_grad()
             loss_res, elapsed_time, disc_metric = train(train_steps, experiment, network, optimizer, train_dataloader)
             current_step += train_steps
-            print(f"Step {current_step} avg loss: {loss_res['loss']:.4f} elapsed time {elapsed_time:0.3f}s")
-            print(f"[discrete_vs_continuous={disc_metric['discrete_vs_continuous']:.4f}]",
-                  f"[discrete_variables={disc_metric['discrete_variables']:.4f}]",
-                  f"[max_diff_to_discrete={disc_metric['max_diff_to_discrete']:.4f}]",
-                  )
+            print(format_metrics(current_step, {**disc_metric, **loss_res, "elapsed_time": elapsed_time}))
 
         # TODO: Implement saving to checkpoint - model, optimizer and steps
         # TODO: Implement training, validating and tasting from checkpoint
@@ -59,13 +56,7 @@ def main():
             results = evaluate_model(network, itertools.islice(validation_dataloader, 100))
 
             # TODO: Get rid of this logging, it is not important
-            print(f"[range_acc={results['range_acc']:.4f}]",
-                  f"[givens_acc={results['givens_acc']:.4f}]",
-                  f"[rows_acc={results['rows_acc']:.4f}]",
-                  f"[col_acc={results['col_acc']:.4f}]",
-                  f"[square_acc={results['square_acc']:.4f}]",
-                  f"[full_acc={results['full_acc']:.4f}]",
-                  )
+            print(format_metrics(current_step, results))
 
             # Login in comet.ml dashboard
             experiment.log_metric("range_acc", results['range_acc'])
