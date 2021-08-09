@@ -7,13 +7,14 @@ from comet_ml import Experiment
 from torch.utils.data import DataLoader
 from torch.utils.data import random_split
 
+import config
 import hyperparams as params
 from data.sudoku_binary import BinarySudokuDataset
 from metrics.average_metrics import AverageMetric
+from metrics.discreate_metric import DiscretizationMetric
 from metrics.sudoku_metrics import SudokuMetric
 from model.mip_network import MIPNetwork
 from utils.data import batch_graphs
-import config
 
 
 def main():
@@ -41,9 +42,13 @@ def main():
         with experiment.train():
             network.train()
             torch.enable_grad()
-            results, elapsed_time = train(train_steps, experiment, network, optimizer, train_dataloader)
+            loss_res, elapsed_time, disc_metric = train(train_steps, experiment, network, optimizer, train_dataloader)
             current_step += train_steps
-            print(f"Step {current_step} avg loss: {results['loss']:.4f} elapsed time {elapsed_time:0.3f}s")
+            print(f"Step {current_step} avg loss: {loss_res['loss']:.4f} elapsed time {elapsed_time:0.3f}s")
+            print(f"[discrete_vs_continuous={disc_metric['discrete_vs_continuous']:.4f}]",
+                  f"[discrete_variables={disc_metric['discrete_variables']:.4f}]",
+                  f"[max_diff_to_discrete={disc_metric['max_diff_to_discrete']:.4f}]",
+                  )
 
         # TODO: Implement saving to checkpoint - model, optimizer and steps
         # TODO: Implement training, validating and tasting from checkpoint
@@ -97,6 +102,7 @@ def main():
 def train(train_steps, experiment, network, optimizer, train_dataloader):
     start = time.time()
     loss_avg = AverageMetric()
+    disc_metric = DiscretizationMetric()
 
     for (edge_indices, edge_values, b_values, size), givens, labels in itertools.islice(train_dataloader, train_steps):
         adj_matrix = torch.sparse_coo_tensor(edge_indices, edge_values, size=size, device=torch.device('cuda:0'))
@@ -113,13 +119,14 @@ def train(train_steps, experiment, network, optimizer, train_dataloader):
 
         loss /= len(decimal_assignments)
         loss_avg.update({"loss": loss})
+        disc_metric.update(torch.squeeze(binary_assignments[-1]))
 
         loss.backward()
         optimizer.step()
 
         experiment.log_metric("loss", loss)
 
-    return loss_avg.numpy_result, time.time() - start
+    return loss_avg.numpy_result, time.time() - start, disc_metric.numpy_result
 
 
 def create_data_loader(test):
@@ -164,8 +171,8 @@ def evaluate_model(network, test_dataloader):
         sudoku_metric.update(assignment, reshaped_givens, reshaped_labels)
 
     # print(torch.reshape(binary_assignments[-1], [params.batch_size, 9, 9, 9]).detach().cpu().numpy())
-    print(assignment.cpu().numpy()[-1, ...])
-    print(reshaped_givens.cpu().numpy()[-1, ...])
+    # print(assignment.cpu().numpy()[-1, ...])
+    # print(reshaped_givens.cpu().numpy()[-1, ...])
 
     return sudoku_metric.numpy_result
 
