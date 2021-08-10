@@ -15,11 +15,11 @@ from metrics.discreate_metric import DiscretizationMetric
 from metrics.sudoku_metrics import SudokuMetric
 from model.mip_network import MIPNetwork
 from utils.data import batch_graphs
-from utils.display import format_metrics
+from utils.visualize import format_metrics
 
 
 def main():
-    experiment = Experiment(disabled=True)  # Set to True to disable logging in comet.ml
+    experiment = Experiment(disabled=False)  # Set to True to disable logging in comet.ml
     experiment.log_parameters({x: getattr(params, x) for x in dir(params) if not x.startswith("__")})
     experiment.log_code(folder=str(Path().resolve()))
 
@@ -46,6 +46,7 @@ def main():
             loss_res, elapsed_time, disc_metric = train(train_steps, experiment, network, optimizer, train_dataloader)
             current_step += train_steps
             print(format_metrics(current_step, {**disc_metric, **loss_res, "elapsed_time": elapsed_time}))
+            experiment.log_metrics({**disc_metric, **loss_res, "elapsed_time": elapsed_time})
 
         # TODO: Implement saving to checkpoint - model, optimizer and steps
         # TODO: Implement training, validating and tasting from checkpoint
@@ -59,12 +60,7 @@ def main():
             print(format_metrics(current_step, results))
 
             # Login in comet.ml dashboard
-            experiment.log_metric("range_acc", results['range_acc'])
-            experiment.log_metric("givens_acc", results['givens_acc'])
-            experiment.log_metric("rows_acc", results['rows_acc'])
-            experiment.log_metric("columns_acc", results['col_acc'])
-            experiment.log_metric("square_acc", results['square_acc'])
-            experiment.log_metric("full_acc", results['full_acc'])
+            experiment.log_metrics(results)
 
     with experiment.test():
         network.eval()
@@ -74,20 +70,10 @@ def main():
         results = evaluate_model(network, test_dataloader)
 
         print("\n\n\n------------------ TESTING ------------------\n")
-        print("Range accuracy: ", results['range_acc'])
-        print("Givens accuracy: ", results['givens_acc'])
-        print("Rows accuracy: ", results['rows_acc'])
-        print("Columns accuracy: ", results['col_acc'])
-        print("Sub-squares accuracy: ", results['square_acc'])
-        print("Full accuracy: ", results['full_acc'])
+        print(format_metrics(params.train_steps, results))
 
         # Login in comet.ml dashboard
-        experiment.log_metric("range_acc", results['range_acc'])
-        experiment.log_metric("givens_acc", results['givens_acc'])
-        experiment.log_metric("rows_acc", results['rows_acc'])
-        experiment.log_metric("columns_acc", results['col_acc'])
-        experiment.log_metric("square_acc", results['square_acc'])
-        experiment.log_metric("full_acc", results['full_acc'])
+        experiment.log_metrics(results)
 
 
 def train(train_steps, experiment, network, optimizer, train_dataloader):
