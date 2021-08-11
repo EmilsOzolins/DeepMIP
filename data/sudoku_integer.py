@@ -93,8 +93,7 @@ class IntegerSudokuDataset(Dataset):
         i = [x for x, _ in indices]
         j = [x for _, x in indices]
 
-        adj_matrix = torch.sparse_coo_tensor(torch.tensor([i, j]), torch.tensor(a_values), dtype=dtype,
-                                             device=torch.device('cuda:0'))
+        adj_matrix = torch.sparse_coo_tensor(torch.tensor([i, j]), torch.tensor(a_values), dtype=dtype, device=torch.device('cuda:0'))
         return adj_matrix, torch.tensor(b_values, dtype=dtype, device=torch.device('cuda:0'))
 
     def __len__(self):

@@ -1,9 +1,9 @@
+from comet_ml import Experiment
 import itertools
 import time
 from pathlib import Path
 
 import torch.sparse
-from comet_ml import Experiment
 from torch.utils.data import DataLoader
 from torch.utils.data import random_split
 

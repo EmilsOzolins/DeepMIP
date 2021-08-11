@@ -39,7 +39,7 @@ class MIPNetwork(torch.nn.Module):
             PairNorm()
         )
 
-        self.noise = torch.distributions.Normal(0, 1)
+        self.noise = torch.distributions.Normal(0, 4)
 
         self.step = 0
         self.powers_of_two = torch.as_tensor([2 ** k for k in range(0, output_bits)], dtype=torch.float32,
@@ -70,7 +70,10 @@ class MIPNetwork(torch.nn.Module):
             out_vars = self.output(variables)
             out = torch.sigmoid(out_vars + self.noise.sample(out_vars.size()).cuda())
 
+            # Straight-Through gradient estimator
+            out = torch.round(out) - out.detach() + out
             binary_outputs.append(out)
+
             decimal_pred = torch.sum(self.powers_of_two * out, dim=-1, keepdim=True)
             decimal_outputs.append(decimal_pred)
 
