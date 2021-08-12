@@ -1,9 +1,9 @@
-from comet_ml import Experiment
 import itertools
 import time
 from pathlib import Path
 
 import torch.sparse
+from comet_ml import Experiment
 from torch.utils.data import DataLoader
 from torch.utils.data import random_split
 
@@ -56,10 +56,7 @@ def main():
             torch.no_grad()
             results = evaluate_model(network, itertools.islice(validation_dataloader, 100))
 
-            # TODO: Get rid of this logging, it is not important
             print(format_metrics(current_step, results))
-
-            # Login in comet.ml dashboard
             experiment.log_metrics(results)
 
     with experiment.test():
@@ -71,8 +68,6 @@ def main():
 
         print("\n\n\n------------------ TESTING ------------------\n")
         print(format_metrics(params.train_steps, results))
-
-        # Login in comet.ml dashboard
         experiment.log_metrics(results)
 
 
