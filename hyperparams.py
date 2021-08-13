@@ -1,8 +1,8 @@
 # Training
-train_steps = 30000
+train_steps = 10000
 
 # Data
-batch_size = 32
+batch_size = 16
 
 # Optimizer
 learning_rate = 0.0001
@@ -10,4 +10,3 @@ learning_rate = 0.0001
 # Model
 recurrent_steps = 8
 feature_maps = 64
-bit_count = 1

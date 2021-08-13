@@ -72,6 +72,12 @@ class IPInstance:
         self.greater_or_equal(variable_indices, variable_multipliers, right_side_value)
         return self
 
+    def less(self):
+        raise NotImplementedError()
+
+    def greater(self):
+        raise NotImplementedError()
+
     @property
     def edge_indices(self):
         i = [x for x, _ in self._indices]

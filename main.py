@@ -9,9 +9,9 @@ from torch.utils.data import random_split
 
 import config
 import hyperparams as params
-from data.sudoku_binary import BinarySudokuDataset
+from data.sudoku import IntegerSudokuDataset
 from metrics.average_metrics import AverageMetric
-from metrics.discreate_metric import DiscretizationMetric
+from metrics.discrete_metrics import DiscretizationMetric
 from metrics.sudoku_metrics import SudokuMetric
 from model.mip_network import MIPNetwork
 from utils.data import batch_graphs
@@ -19,18 +19,19 @@ from utils.visualize import format_metrics
 
 
 def main():
-    experiment = Experiment(disabled=False)  # Set to True to disable logging in comet.ml
+    experiment = Experiment(disabled=True)  # Set to True to disable logging in comet.ml
     experiment.log_parameters({x: getattr(params, x) for x in dir(params) if not x.startswith("__")})
     experiment.log_code(folder=str(Path().resolve()))
 
-    dataset = BinarySudokuDataset("binary/sudoku.csv")
+    # dataset = BinarySudokuDataset("binary/sudoku.csv")
+    dataset = IntegerSudokuDataset("binary/sudoku.csv")
     splits = [10000, 10000, len(dataset) - 20000]
     test_data, val_data, train_data = random_split(dataset, splits, generator=torch.Generator().manual_seed(42))
     train_dataloader = create_data_loader(train_data)
     validation_dataloader = create_data_loader(val_data)
 
     network = MIPNetwork(
-        output_bits=params.bit_count,
+        output_bits=dataset.required_output_bits,
         feature_maps=params.feature_maps,
         pass_steps=params.recurrent_steps
     ).cuda()
@@ -54,7 +55,7 @@ def main():
         with experiment.validate():
             network.eval()
             torch.no_grad()
-            results = evaluate_model(network, itertools.islice(validation_dataloader, 100))
+            results = evaluate_model(network, validation_dataloader, dataset, eval_iterations=100)
 
             print(format_metrics(current_step, results))
             experiment.log_metrics(results)
@@ -64,7 +65,7 @@ def main():
         torch.no_grad()
         test_dataloader = create_data_loader(test_data)
 
-        results = evaluate_model(network, test_dataloader)
+        results = evaluate_model(network, test_dataloader, dataset)
 
         print("\n\n\n------------------ TESTING ------------------\n")
         print(format_metrics(params.train_steps, results))
@@ -91,7 +92,7 @@ def train(train_steps, experiment, network, optimizer, train_dataloader):
 
         loss /= len(decimal_assignments)
         loss_avg.update({"loss": loss})
-        disc_metric.update(torch.squeeze(binary_assignments[-1]))
+        disc_metric.update(torch.squeeze(decimal_assignments[-1]))
 
         loss.backward()
         optimizer.step()
@@ -121,30 +122,33 @@ def create_data_loader(test):
                           )
 
 
-def evaluate_model(network, test_dataloader):
+def evaluate_model(network, test_dataloader, dataset, eval_iterations=None):
     sudoku_metric = SudokuMetric()
-    for (edge_indices, edge_values, b_values, size), givens, labels in test_dataloader:
+    iterable = itertools.islice(test_dataloader, eval_iterations) if eval_iterations else test_dataloader
+
+    for (edge_indices, edge_values, b_values, size), givens, labels in iterable:
         adj_matrix = torch.sparse_coo_tensor(edge_indices, edge_values, size=size, device=torch.device('cuda:0'))
         b_values = b_values.cuda()
         givens = givens.cuda()
         labels = labels.cuda()
 
         binary_assignments, decimal_assignments = network.forward(adj_matrix, b_values)
+        assignment = dataset.decode_model_outputs(binary_assignments[-1], decimal_assignments[-1])
 
-        assignment = decimal_assignments[-1]
-        assignment = torch.round(assignment)
+        assignment = torch.reshape(assignment, [params.batch_size, -1])
+        helpers = assignment[:, 9 * 9:]
+        assignment = assignment[:, :9 * 9]
 
-        assignment = torch.reshape(assignment, [params.batch_size, 9, 9, 9])
-        assignment = torch.argmax(assignment, dim=-1) + 1
-
-        reshaped_givens = torch.reshape(givens, [params.batch_size, 9, 9])
+        assignment = torch.reshape(assignment, [params.batch_size, 9, 9])
+        reshaped_givens = torch.reshape(givens, [params.batch_size, 9, 9])  # TODO: Reshape these in dataset
         reshaped_labels = torch.reshape(labels, [params.batch_size, 9, 9])
 
         sudoku_metric.update(assignment, reshaped_givens, reshaped_labels)
 
     # print(torch.reshape(binary_assignments[-1], [params.batch_size, 9, 9, 9]).detach().cpu().numpy())
-    # print(assignment.cpu().numpy()[-1, ...])
-    # print(reshaped_givens.cpu().numpy()[-1, ...])
+    print(assignment.detach().cpu().numpy()[-1, ...])
+    print(reshaped_givens.cpu().numpy()[-1, ...])
+    print(helpers.detach().cpu().numpy()[-1, :10])
 
     return sudoku_metric.numpy_result
 
