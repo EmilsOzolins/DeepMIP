@@ -2,7 +2,7 @@
 train_steps = 10000
 
 # Data
-batch_size = 16
+batch_size = 4
 
 # Optimizer
 learning_rate = 0.0001

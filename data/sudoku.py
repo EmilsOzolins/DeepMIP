@@ -4,7 +4,7 @@ import pandas as pd
 import torch
 from torch.utils.data.dataset import Dataset, T_co
 
-from data.integer_programming_instance import IPInstance
+from data.ip_instance import IPInstance
 
 
 class IPSudokuDataset(Dataset, ABC):

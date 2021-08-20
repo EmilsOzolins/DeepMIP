@@ -72,6 +72,9 @@ class IPInstance:
         self.greater_or_equal(variable_indices, variable_multipliers, right_side_value)
         return self
 
+    def objective_function(self, variable_indices: List[int], variable_multipliers: List[float]):
+        pass
+
     def less(self):
         raise NotImplementedError()
 
