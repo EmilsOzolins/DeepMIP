@@ -4,15 +4,19 @@ import pandas as pd
 import torch
 from torch.utils.data.dataset import Dataset, T_co
 
+import hyperparams as params
+from data.datasets_base import MIPDataset
 from data.ip_instance import IPInstance
+from metrics.sudoku_metrics import SudokuMetric
 
 
-class IPSudokuDataset(Dataset, ABC):
+class IPSudokuDataset(MIPDataset, Dataset, ABC):
 
     def __init__(self, csv_file) -> None:
         csv = pd.read_csv(csv_file, header=0)
         self.features = csv["quizzes"]
         self.labels = csv["solutions"]
+        self._sudoku_metrics = SudokuMetric()
 
     def __getitem__(self, index) -> T_co:
         x = self.features[index]
@@ -20,7 +24,16 @@ class IPSudokuDataset(Dataset, ABC):
         label = self.labels[index]
         label = self._prepare_sudoku(label)
 
-        return self.prepare_mip(givens), torch.as_tensor(givens), torch.as_tensor(label)
+        py_givens = givens
+        givens = torch.as_tensor(givens)
+        givens = torch.reshape(givens, [9, 9])
+
+        label = torch.as_tensor(label)
+        label = torch.reshape(label, [9, 9])
+
+        return {"mip": self.prepare_mip(py_givens),
+                "givens": givens,
+                "labels": label}
 
     @staticmethod
     def _prepare_sudoku(data):
@@ -33,14 +46,22 @@ class IPSudokuDataset(Dataset, ABC):
     def prepare_mip(self, data):
         pass
 
-    @property
-    @abstractmethod
-    def required_output_bits(self):
-        pass
-
     @abstractmethod
     def decode_model_outputs(self, binary_assignment, decimal_assignment):
         pass
+
+    def create_metrics(self):
+        self._sudoku_metrics = SudokuMetric()
+
+    def evaluate_model_outputs(self, binary_assignment, decimal_assignment, batched_data: dict):
+        givens = batched_data["givens"].cuda()
+        labels = batched_data["labels"].cuda()
+
+        assignment = self.decode_model_outputs(binary_assignment, decimal_assignment)
+        self._sudoku_metrics.update(assignment, givens, labels)
+
+    def get_metrics(self):
+        return self._sudoku_metrics.numpy_result
 
 
 class BinarySudokuDataset(IPSudokuDataset):
@@ -102,6 +123,7 @@ class BinarySudokuDataset(IPSudokuDataset):
     def decode_model_outputs(self, binary_assignment, decimal_assignment):
         assignment = binary_assignment
         assignment = torch.round(assignment)  # TODO: I should round binary representation
+        assignment = torch.reshape(assignment, [params.batch_size, 9, 9, 9])
         return torch.argmax(assignment, dim=-1) + 1
 
 
@@ -188,7 +210,9 @@ class IntegerSudokuDataset(IPSudokuDataset):
     def decode_model_outputs(self, binary_assignment, decimal_assignment):
         powers = torch.tensor([2 ** k for k in range(self.required_output_bits)], dtype=torch.float32,
                               device=binary_assignment.device)
-        return torch.sum(torch.round(binary_assignment) * powers, dim=-1)
+        assignment = torch.reshape(binary_assignment, [params.batch_size, 9, 9, self.required_output_bits])
+        assignment = torch.round(assignment)
+        return torch.sum(assignment * powers, dim=-1)
 
     @staticmethod
     def _calc_index(x, y) -> int:

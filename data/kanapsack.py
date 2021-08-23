@@ -2,18 +2,21 @@ import random
 from abc import abstractmethod
 from typing import Iterator
 
+import torch
 from torch.utils.data import IterableDataset
 from torch.utils.data._typing import T_co
 
+from data.datasets_base import MIPDataset
 from data.ip_instance import IPInstance
 
 
-class BoundedKnapsackDataset(IterableDataset):
+class BoundedKnapsackDataset(MIPDataset, IterableDataset):
     """ Base for random Knapsack problem.
         For more information see: https://en.wikipedia.org/wiki/Knapsack_problem
     """
 
     def __init__(self, min_variables, max_variables, max_copies, max_weight=10, max_values=10) -> None:
+        super(BoundedKnapsackDataset, self).__init__()
         self._max_variables = max_variables
         self._min_variables = min_variables
         self._max_copies = max_copies
@@ -22,17 +25,18 @@ class BoundedKnapsackDataset(IterableDataset):
 
     def __iter__(self) -> Iterator[T_co]:
         def generator():
-            var_count = random.randint(self._min_variables, self._max_variables)
-            weights = [random.randint(0, self._max_weight) for _ in range(var_count)]
-            values = [random.randint(0, self._max_values) for _ in range(var_count)]
-            copies = [random.randint(1, self._max_copies) for _ in range(var_count)]
-            var_indices = [i for i in range(var_count)]
+            while True:
+                var_count = random.randint(self._min_variables, self._max_variables)
+                weights = [random.randint(0, self._max_weight) for _ in range(var_count)]
+                values = [random.randint(0, self._max_values) for _ in range(var_count)]
+                copies = [random.randint(1, self._max_copies) for _ in range(var_count)]
+                var_indices = [i for i in range(var_count)]
 
-            max_weight = sum([w * c for w, c in zip(weights, copies)])
-            min_weight = sum(weights)
-            capacity = random.randint(min_weight, max_weight)
+                max_weight = sum([w * c for w, c in zip(weights, copies)])
+                min_weight = sum(weights)
+                capacity = random.randint(min_weight, max_weight)
 
-            yield self.convert_to_mip(var_indices, weights, values, copies, capacity)
+                yield {"mip": self.convert_to_mip(var_indices, weights, values, copies, capacity)}
 
         return generator()
 
@@ -56,8 +60,24 @@ class BoundedKnapsackDataset(IterableDataset):
     def decode_model_outputs(self, binary_assignment, decimal_assignment):
         pass
 
+    def create_metrics(self):
+        pass
+
+    def evaluate_model_outputs(self, binary_assignment, decimal_assignment, batched_data):
+        pass
+
+    def get_metrics(self):
+        pass
+
 
 class BinaryKnapsackDataset(BoundedKnapsackDataset):
 
     def __init__(self, min_variables, max_variables, max_weight=10, max_values=10) -> None:
         super().__init__(min_variables, max_variables, 1, max_weight, max_values)
+
+    def decode_model_outputs(self, binary_assignment, decimal_assignment):
+        assignments = torch.round(binary_assignment)
+        return torch.squeeze(assignments)
+
+    def encode_model_inputs(self, batched_data: dict):
+        return None
