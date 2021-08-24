@@ -1,10 +1,9 @@
 import random
 from abc import abstractmethod
-from typing import Iterator
+from typing import Iterator, Dict
 
 import torch
 from torch.utils.data import IterableDataset
-from torch.utils.data._typing import T_co
 
 from data.datasets_base import MIPDataset
 from data.ip_instance import IPInstance
@@ -23,7 +22,7 @@ class BoundedKnapsackDataset(MIPDataset, IterableDataset):
         self._max_weight = max_weight
         self._max_values = max_values
 
-    def __iter__(self) -> Iterator[T_co]:
+    def __iter__(self) -> Iterator[Dict]:
         def generator():
             while True:
                 var_count = random.randint(self._min_variables, self._max_variables)
@@ -67,7 +66,7 @@ class BoundedKnapsackDataset(MIPDataset, IterableDataset):
         pass
 
     def get_metrics(self):
-        pass
+        return {}
 
 
 class BinaryKnapsackDataset(BoundedKnapsackDataset):
@@ -79,5 +78,4 @@ class BinaryKnapsackDataset(BoundedKnapsackDataset):
         assignments = torch.round(binary_assignment)
         return torch.squeeze(assignments)
 
-    def encode_model_inputs(self, batched_data: dict):
-        return None
+# TODO: Unbounded Knapsack dataset

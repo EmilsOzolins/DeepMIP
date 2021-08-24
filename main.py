@@ -5,10 +5,11 @@ from pathlib import Path
 
 import torch.sparse
 from comet_ml import Experiment
-from torch.utils.data import DataLoader, IterableDataset, random_split
+from torch.utils.data import DataLoader, IterableDataset
 
 import config
 import hyperparams as params
+from data.kanapsack import BinaryKnapsackDataset
 from data.sudoku import BinarySudokuDataset
 from metrics.average_metrics import AverageMetric
 from metrics.discrete_metrics import DiscretizationMetric
@@ -22,20 +23,28 @@ def main():
     experiment.log_parameters({x: getattr(params, x) for x in dir(params) if not x.startswith("__")})
     experiment.log_code(folder=str(Path().resolve()))
 
-    dataset = BinarySudokuDataset("binary/sudoku.csv")
-    # dataset = IntegerSudokuDataset("binary/sudoku.csv")
-    splits = [10000, 10000, len(dataset) - 20000]
-    test_data, val_data, train_data = random_split(dataset, splits, generator=torch.Generator().manual_seed(42))
+    # TODO: Move dataset selection to separate resolver and add flag in config
+    sudoku_test_data = "binary/sudoku_test.csv"
+    sudoku_train_data = "binary/sudoku_train.csv"
+    sudoku_val_data = "binary/sudoku_validate.csv"
 
-    # test_data = BinaryKnapsackDataset(8, 8)
-    # val_data = BinaryKnapsackDataset(8, 8)
-    # train_data = BinaryKnapsackDataset(8, 8)
+    test_dataset = BinarySudokuDataset(sudoku_test_data)
+    train_dataset = BinarySudokuDataset(sudoku_train_data)
+    val_dataset = BinarySudokuDataset(sudoku_val_data)
 
-    train_dataloader = create_data_loader(train_data)
-    validation_dataloader = create_data_loader(val_data)
+    # test_dataset = IntegerSudokuDataset(sudoku_test_data)
+    # train_dataset = IntegerSudokuDataset(sudoku_train_data)
+    # val_dataset = IntegerSudokuDataset(sudoku_val_data)
+
+    # test_dataset = BinaryKnapsackDataset(8, 8)
+    # train_dataset = BinaryKnapsackDataset(8, 8)
+    # val_dataset = BinaryKnapsackDataset(8, 8)
+
+    train_dataloader = create_data_loader(train_dataset)
+    validation_dataloader = create_data_loader(val_dataset)
 
     network = MIPNetwork(
-        output_bits=dataset.required_output_bits,
+        output_bits=train_dataset.required_output_bits,
         feature_maps=params.feature_maps,
         pass_steps=params.recurrent_steps
     ).cuda()
@@ -59,7 +68,7 @@ def main():
         with experiment.validate():
             network.eval()
             torch.no_grad()
-            results = evaluate_model(network, validation_dataloader, dataset, eval_iterations=100)
+            results = evaluate_model(network, validation_dataloader, val_dataset, eval_iterations=100)
 
             print(format_metrics(current_step, results))
             experiment.log_metrics(results)
@@ -67,9 +76,9 @@ def main():
     with experiment.test():
         network.eval()
         torch.no_grad()
-        test_dataloader = create_data_loader(test_data)
+        test_dataloader = create_data_loader(test_dataset)
 
-        results = evaluate_model(network, test_dataloader, dataset)
+        results = evaluate_model(network, test_dataloader, test_dataset)
 
         print("\n\n\n------------------ TESTING ------------------\n")
         print(format_metrics(params.train_steps, results))
