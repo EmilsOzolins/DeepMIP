@@ -1,8 +1,9 @@
 from abc import abstractmethod, ABC
+from typing import Dict
 
 import pandas as pd
 import torch
-from torch.utils.data.dataset import Dataset, T_co
+from torch.utils.data.dataset import Dataset
 
 import hyperparams as params
 from data.datasets_base import MIPDataset
@@ -18,7 +19,7 @@ class IPSudokuDataset(MIPDataset, Dataset, ABC):
         self.labels = csv["solutions"]
         self._sudoku_metrics = SudokuMetric()
 
-    def __getitem__(self, index) -> T_co:
+    def __getitem__(self, index) -> Dict:
         x = self.features[index]
         givens = self._prepare_sudoku(x)
         label = self.labels[index]
