@@ -1,4 +1,4 @@
-from collections import defaultdict
+from collections import defaultdict, namedtuple
 from typing import Tuple, List, Dict
 
 import torch
@@ -38,7 +38,10 @@ def batch_as_mip(mip_instances: Tuple[IPInstance]):
     const_offset = 0
     size = [0, 0]
 
-    for mip in mip_instances:
+    objective_edge_indices = []
+    objective_edge_values = []
+
+    for graph_id, mip in enumerate(mip_instances):
         ind = mip.edge_indices
         ind[0, :] += var_offset
         ind[1, :] += const_offset
@@ -46,14 +49,24 @@ def batch_as_mip(mip_instances: Tuple[IPInstance]):
         size[0] += mip.size[0]
         size[1] += mip.size[1]
 
+        obj_ind = mip.objective_edge_indices
+        obj_ind[0, :] += var_offset
+        obj_ind[1, :] += graph_id
+
         var_offset += mip.next_var_index
         const_offset += mip.next_constraint_index
+
+        objective_edge_indices.append(obj_ind)
+        objective_edge_values.append(mip.objective_edge_values)
 
         edge_indices.append(ind)
         edge_values.append(mip.edge_values)
         constrain_values.append(mip.constraints_values)
 
-    return torch.cat(edge_indices, dim=-1), torch.cat(edge_values, dim=-1), torch.cat(constrain_values, dim=-1), size
+    constraints = torch.cat(edge_indices, dim=-1), torch.cat(edge_values, dim=-1), torch.cat(constrain_values, dim=-1), size
+    objective = torch.cat(objective_edge_indices, dim=-1), torch.cat(objective_edge_values, dim=-1), [size[0], len(mip_instances)]
+
+    return {"constraints": constraints, "objective": objective}
 
 
 def batch_as_tensor(batch_data: Tuple[Tensor]):

@@ -10,7 +10,6 @@ from torch.utils.data import DataLoader, IterableDataset
 import config
 import hyperparams as params
 from data.kanapsack import BinaryKnapsackDataset
-from data.sudoku import BinarySudokuDataset
 from metrics.average_metrics import AverageMetric
 from metrics.discrete_metrics import DiscretizationMetric
 from model.mip_network import MIPNetwork
@@ -28,17 +27,17 @@ def main():
     sudoku_train_data = "binary/sudoku_train.csv"
     sudoku_val_data = "binary/sudoku_validate.csv"
 
-    test_dataset = BinarySudokuDataset(sudoku_test_data)
-    train_dataset = BinarySudokuDataset(sudoku_train_data)
-    val_dataset = BinarySudokuDataset(sudoku_val_data)
+    # test_dataset = BinarySudokuDataset(sudoku_test_data)
+    # train_dataset = BinarySudokuDataset(sudoku_train_data)
+    # val_dataset = BinarySudokuDataset(sudoku_val_data)
 
     # test_dataset = IntegerSudokuDataset(sudoku_test_data)
     # train_dataset = IntegerSudokuDataset(sudoku_train_data)
     # val_dataset = IntegerSudokuDataset(sudoku_val_data)
 
-    # test_dataset = BinaryKnapsackDataset(8, 8)
-    # train_dataset = BinaryKnapsackDataset(8, 8)
-    # val_dataset = BinaryKnapsackDataset(8, 8)
+    test_dataset = BinaryKnapsackDataset(8, 8)
+    train_dataset = BinaryKnapsackDataset(8, 8)
+    val_dataset = BinaryKnapsackDataset(8, 8)
 
     train_dataloader = create_data_loader(train_dataset)
     validation_dataloader = create_data_loader(val_dataset)
@@ -91,18 +90,25 @@ def train(train_steps, experiment, network, optimizer, train_dataloader):
     disc_metric = DiscretizationMetric()
 
     for batched_data in itertools.islice(train_dataloader, train_steps):
-        edge_indices, edge_values, b_values, size = batched_data["mip"]
-        adj_matrix = torch.sparse_coo_tensor(edge_indices, edge_values, size=size, device=torch.device('cuda:0'))
-        b_values = b_values.cuda()
+
+        edge_indices, edge_values, constr_b_values, size = batched_data["mip"]["constraints"]
+        constr_adj_matrix = torch.sparse_coo_tensor(edge_indices, edge_values, size=size, device=torch.device('cuda:0'))
+        constr_b_values = constr_b_values.cuda()
+
+        obj_edge_indices, obj_edge_values, size = batched_data["mip"]["objective"]
+        obj_adj_matrix = torch.sparse_coo_tensor(obj_edge_indices, obj_edge_values, size=size, device=torch.device('cuda:0'))
 
         optimizer.zero_grad()
-        binary_assignments, decimal_assignments = network.forward(adj_matrix, b_values)
+        binary_assignments, decimal_assignments = network.forward(constr_adj_matrix, constr_b_values)
 
         loss = 0
         for asn in decimal_assignments:
-            l = torch.relu(torch.squeeze(torch.sparse.mm(adj_matrix.t(), asn)) - b_values)
-            # l = torch.square(l)
-            loss += torch.sum(l)
+            loss_c = torch.relu(torch.squeeze(torch.sparse.mm(constr_adj_matrix.t(), asn)) - constr_b_values)
+            loss_c = torch.square(loss_c)
+            # TODO: Per graph loss
+
+            loss_o = torch.squeeze(torch.sparse.mm(obj_adj_matrix.t(), asn))
+            loss += torch.sum(loss_c) + torch.sum(loss_o)
 
         loss /= len(decimal_assignments)
         loss_avg.update({"loss": loss})
@@ -141,11 +147,14 @@ def evaluate_model(network, test_dataloader, dataset, eval_iterations=None):
     iterable = itertools.islice(test_dataloader, eval_iterations) if eval_iterations else test_dataloader
 
     for batched_data in iterable:
-        edge_indices, edge_values, b_values, size = batched_data["mip"]
-        adj_matrix = torch.sparse_coo_tensor(edge_indices, edge_values, size=size, device=torch.device('cuda:0'))
-        b_values = b_values.cuda()
+        edge_indices, edge_values, constr_b_values, size = batched_data["mip"]["constraints"]
+        constr_adj_matrix = torch.sparse_coo_tensor(edge_indices, edge_values, size=size, device=torch.device('cuda:0'))
+        constr_b_values = constr_b_values.cuda()
 
-        binary_assignments, decimal_assignments = network.forward(adj_matrix, b_values)
+        # obj_edge_indices, obj_edge_values, size = batched_data["mip"]["objective"]
+        # obj_adj_matrix = torch.sparse_coo_tensor(obj_edge_indices, obj_edge_values, size=size, device=torch.device('cuda:0'))
+
+        binary_assignments, decimal_assignments = network.forward(constr_adj_matrix, constr_b_values)
         dataset.evaluate_model_outputs(binary_assignments[-1], decimal_assignments[-1], batched_data)
 
     return dataset.get_metrics()

@@ -15,6 +15,9 @@ class IPInstance:
         self._current_constraint_index = 0
         self._max_var_index = variable_count - 1 if variable_count else 0
 
+        self._objective_indices = []
+        self._objective_multipliers = []
+
     def greater_or_equal(self, variable_indices: List[int],
                          variable_multipliers: List[float],
                          right_side_value: float
@@ -73,7 +76,11 @@ class IPInstance:
         return self
 
     def objective_function(self, variable_indices: List[int], variable_multipliers: List[float]):
-        pass
+        """
+        This objective function will be minimized
+        """
+        self._objective_indices += variable_indices
+        self._objective_multipliers += variable_multipliers
 
     def less(self):
         raise NotImplementedError()
@@ -102,6 +109,15 @@ class IPInstance:
     @property
     def next_constraint_index(self):
         return self._current_constraint_index
+
+    @property
+    def objective_edge_indices(self):
+        graph_indices = [0] * len(self._objective_indices)
+        return torch.as_tensor([self._objective_indices, graph_indices], dtype=torch.int32)
+
+    @property
+    def objective_edge_values(self):
+        return torch.as_tensor(self._objective_multipliers, dtype=torch.float32)
 
     @property
     def size(self):
