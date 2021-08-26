@@ -99,21 +99,21 @@ class IPInstance:
         raise NotImplementedError()
 
     @property
-    def edge_indices(self):
+    def variables_constraints_graph(self):
         i = [x for x, _ in self._indices]
         j = [x for _, x in self._indices]
         return torch.as_tensor([i, j])
 
     @property
-    def edge_values(self):
+    def variables_constraints_values(self):
         return torch.as_tensor(self._multipliers, dtype=torch.float32)
 
     @property
-    def constraints_values(self):
+    def right_values_of_constraints(self):
         return torch.as_tensor(self._right_side_values, dtype=torch.float32)
 
     @property
-    def next_var_index(self):
+    def next_variable_index(self):
         return self._max_var_index + 1
 
     @property
@@ -121,14 +121,38 @@ class IPInstance:
         return self._current_constraint_index
 
     @property
-    def objective_edge_indices(self):
+    def variables_constraints_graph_size(self):
+        return self.next_variable_index, self.next_constraint_index
+
+    @property
+    def variables_objective_graph(self):
         graph_indices = [0] * len(self._objective_indices)
         return torch.as_tensor([self._objective_indices, graph_indices], dtype=torch.int32)
 
     @property
-    def objective_edge_values(self):
+    def variables_objective_graph_values(self):
         return torch.as_tensor(self._objective_multipliers, dtype=torch.float32)
 
     @property
-    def size(self):
-        return self.next_var_index, self.next_constraint_index
+    def constraints_instance_graph(self):
+        """ Returns adjacency matrix indices for clauses-instance graph
+        """
+        graph_indices = [0] * self.next_constraint_index
+        clauses_indices = [i for i in range(self.next_constraint_index)]
+        return torch.as_tensor([clauses_indices, graph_indices])
+
+    @property
+    def constraints_instance_graph_values(self):
+        return torch.as_tensor([1] * self.next_constraint_index, dtype=torch.float32)
+
+    @property
+    def variables_instance_graph(self):
+        """ Returns adjacency matrix indices for variables-instance graph
+        """
+        graph_indices = [0] * self.next_variable_index
+        vars_indices = [i for i in range(self.next_variable_index)]
+        return torch.as_tensor([vars_indices, graph_indices])
+
+    @property
+    def variables_instance_graph_values(self):
+        return torch.as_tensor([1] * self.next_variable_index, dtype=torch.float32)
