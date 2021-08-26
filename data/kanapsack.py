@@ -7,6 +7,7 @@ from torch.utils.data import IterableDataset
 
 from data.datasets_base import MIPDataset
 from data.ip_instance import IPInstance
+from metrics.knapsack_metrics import KnapsackMetrics
 
 
 class BoundedKnapsackDataset(MIPDataset, IterableDataset):
@@ -21,6 +22,7 @@ class BoundedKnapsackDataset(MIPDataset, IterableDataset):
         self._max_copies = max_copies
         self._max_weight = max_weight
         self._max_values = max_values
+        self._metrics = None
 
     def __iter__(self) -> Iterator[Dict]:
         def generator():
@@ -60,13 +62,19 @@ class BoundedKnapsackDataset(MIPDataset, IterableDataset):
         pass
 
     def create_metrics(self):
-        pass
+        self._metrics = KnapsackMetrics()
 
     def evaluate_model_outputs(self, binary_assignment, decimal_assignment, batched_data):
-        pass
+        model_output = self.decode_model_outputs(binary_assignment, decimal_assignment)
+
+        edge_indices, edge_values, constr_b_values, size = batched_data["mip"]["constraints"]
+        constr_adj_matrix = torch.sparse_coo_tensor(edge_indices, edge_values, size=size, device=torch.device('cuda:0'))
+        constr_b_values = constr_b_values.cuda()
+
+        self._metrics.update(model_output, constr_adj_matrix, constr_b_values)
 
     def get_metrics(self):
-        return {}
+        return self._metrics.numpy_result
 
 
 class BinaryKnapsackDataset(BoundedKnapsackDataset):

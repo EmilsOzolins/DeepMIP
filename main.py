@@ -109,8 +109,9 @@ def train(train_steps, experiment, network, optimizer, train_dataloader):
             total_loss_c += torch.sum(loss_c)
 
             loss_o = torch.squeeze(torch.sparse.mm(obj_adj_matrix.t(), asn))
-            total_loss_o += torch.sum(loss_o)
-            # TODO: Per graph loss
+            total_loss_o += torch.sum(loss_o)  # Calculate mean over graphs
+
+            # TODO: collect per graph, then sum with optimization loss and the take mean
 
         total_loss_o /= len(decimal_assignments)
         total_loss_c /= len(decimal_assignments)
