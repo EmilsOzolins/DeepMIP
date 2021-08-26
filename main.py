@@ -101,23 +101,29 @@ def train(train_steps, experiment, network, optimizer, train_dataloader):
         optimizer.zero_grad()
         binary_assignments, decimal_assignments = network.forward(constr_adj_matrix, constr_b_values)
 
-        loss = 0
+        total_loss_o = 0
+        total_loss_c = 0
         for asn in decimal_assignments:
             loss_c = torch.relu(torch.squeeze(torch.sparse.mm(constr_adj_matrix.t(), asn)) - constr_b_values)
             loss_c = torch.square(loss_c)
-            # TODO: Per graph loss
+            total_loss_c += torch.sum(loss_c)
 
             loss_o = torch.squeeze(torch.sparse.mm(obj_adj_matrix.t(), asn))
-            loss += torch.sum(loss_c) + torch.sum(loss_o)
+            total_loss_o += torch.sum(loss_o)
+            # TODO: Per graph loss
 
-        loss /= len(decimal_assignments)
-        loss_avg.update({"loss": loss})
+        total_loss_o /= len(decimal_assignments)
+        total_loss_c /= len(decimal_assignments)
+        loss = total_loss_o + total_loss_c
+        loss_avg.update({"loss": loss, "loss_opt": total_loss_o, "loss_const": total_loss_c})
         disc_metric.update(torch.squeeze(decimal_assignments[-1]))
 
         loss.backward()
         optimizer.step()
 
         experiment.log_metric("loss", loss)
+        experiment.log_metric("loss_opt", total_loss_o)
+        experiment.log_metric("loss_const", total_loss_c)
 
     return loss_avg.numpy_result, time.time() - start, disc_metric.numpy_result
 
