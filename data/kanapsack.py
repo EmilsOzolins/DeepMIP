@@ -32,7 +32,7 @@ class BoundedKnapsackDataset(MIPDataset, IterableDataset):
                 var_indices = [i for i in range(var_count)]
 
                 max_weight = sum([w * c for w, c in zip(weights, copies)])
-                min_weight = sum(weights)
+                min_weight = min(weights)
                 capacity = random.randint(min_weight, max_weight)
 
                 yield {"mip": self.convert_to_mip(var_indices, weights, values, copies, capacity)}
@@ -72,7 +72,7 @@ class BoundedKnapsackDataset(MIPDataset, IterableDataset):
 class BinaryKnapsackDataset(BoundedKnapsackDataset):
 
     def __init__(self, min_variables, max_variables, max_weight=10, max_values=10) -> None:
-        super().__init__(min_variables, max_variables, 1, max_weight, max_values)
+        super().__init__(min_variables, max_variables, max_copies=1, max_weight=max_weight, max_values=max_values)
 
     def decode_model_outputs(self, binary_assignment, decimal_assignment):
         assignments = torch.round(binary_assignment)
