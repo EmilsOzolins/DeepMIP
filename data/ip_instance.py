@@ -18,6 +18,8 @@ class IPInstance:
         self._objective_indices = []
         self._objective_multipliers = []
 
+        self._objective_set = False
+
     def greater_or_equal(self, variable_indices: List[int],
                          variable_multipliers: List[float],
                          right_side_value: float
@@ -75,12 +77,20 @@ class IPInstance:
         self.greater_or_equal(variable_indices, variable_multipliers, right_side_value)
         return self
 
-    def objective_function(self, variable_indices: List[int], variable_multipliers: List[float]):
+    def minimize_objective(self, variable_indices: List[int], variable_multipliers: List[float]):
         """
         This objective function will be minimized
         """
+        if self._objective_set:
+            raise ValueError("Objective already set, can't set it second time!")
+
+        self._objective_set = True
         self._objective_indices += variable_indices
         self._objective_multipliers += variable_multipliers
+
+    def maximize_objective(self, variable_indices: List[int], variable_multipliers: List[float]):
+        variable_multipliers = [-x for x in variable_multipliers]
+        self.minimize_objective(variable_indices, variable_multipliers)
 
     def less(self):
         raise NotImplementedError()

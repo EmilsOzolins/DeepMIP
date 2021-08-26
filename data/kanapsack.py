@@ -47,7 +47,7 @@ class BoundedKnapsackDataset(MIPDataset, IterableDataset):
             ip.less_or_equal([ind], [1], c)
 
         ip.less_or_equal(var_indices, weights, capacity)
-        ip.objective_function(var_indices, values)
+        ip.maximize_objective(var_indices, values)
 
         return ip
 
