@@ -19,10 +19,17 @@ def batch_data(batch: List[Dict]):
     for key, data in batch_data.items():
         if isinstance(data[0], IPInstance):
             output_batch[key] = batch_as_mip(data)
-        elif isinstance(data[0], Tensor):
+            continue
+
+        if isinstance(data[0], Tensor):
             output_batch[key] = batch_as_tensor(data)
-        else:
-            raise NotImplementedError(f"Batching for {type(data[0])} is not implemented!")
+            continue
+
+        if isinstance(data[0], int):
+            output_batch[key] = data
+            continue
+
+        raise NotImplementedError(f"Batching for {type(data[0])} is not implemented!")
 
     return output_batch
 
