@@ -36,9 +36,9 @@ def main():
     # train_dataset = IntegerSudokuDataset(sudoku_train_data)
     # val_dataset = IntegerSudokuDataset(sudoku_val_data)
 
-    test_dataset = BinaryKnapsackDataset(8, 8)
-    train_dataset = BinaryKnapsackDataset(8, 8)
-    val_dataset = BinaryKnapsackDataset(8, 8)
+    test_dataset = BinaryKnapsackDataset(2, 10)
+    train_dataset = BinaryKnapsackDataset(2, 10)
+    val_dataset = BinaryKnapsackDataset(2, 10)
 
     train_dataloader = create_data_loader(train_dataset)
     validation_dataloader = create_data_loader(val_dataset)
