@@ -87,3 +87,5 @@ class BinaryKnapsackDataset(BoundedKnapsackDataset):
         return torch.squeeze(assignments)
 
 # TODO: Unbounded Knapsack dataset
+
+# TODO: Add hard instances from http://hjemmesider.diku.dk/~pisinger/codes.html

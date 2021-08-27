@@ -12,6 +12,7 @@ import hyperparams as params
 from data.kanapsack import BinaryKnapsackDataset
 from metrics.average_metrics import AverageMetric
 from metrics.discrete_metrics import DiscretizationMetric
+from metrics.mip_metrics import MIPMetrics
 from model.mip_network import MIPNetwork
 from utils.data import batch_data
 from utils.visualize import format_metrics
@@ -89,33 +90,46 @@ def train(train_steps, experiment, network, optimizer, train_dataloader):
     loss_avg = AverageMetric()
     disc_metric = DiscretizationMetric()
 
+    device = torch.device('cuda:0')
+
     for batched_data in itertools.islice(train_dataloader, train_steps):
 
-        edge_indices, edge_values, constr_b_values, size = batched_data["mip"]["constraints"]
-        constr_adj_matrix = torch.sparse_coo_tensor(edge_indices, edge_values, size=size, device=torch.device('cuda:0'))
+        vars_const_edges, vars_const_values, constr_b_values, size = batched_data["mip"]["constraints"]
+        vars_constr_graph = torch.sparse_coo_tensor(vars_const_edges, vars_const_values, size=size, device=device)
         constr_b_values = constr_b_values.cuda()
 
         obj_edge_indices, obj_edge_values, size = batched_data["mip"]["objective"]
-        obj_adj_matrix = torch.sparse_coo_tensor(obj_edge_indices, obj_edge_values, size=size, device=torch.device('cuda:0'))
+        obj_adj_matrix = torch.sparse_coo_tensor(obj_edge_indices, obj_edge_values, size=size, device=device)
+
+        const_inst_edges, const_inst_values, size = batched_data["mip"]["consts_per_graph"]
+        const_inst_graph = torch.sparse_coo_tensor(const_inst_edges, const_inst_values, size=size, device=device)
+
+        vars_inst_edges, vars_inst_values, size = batched_data["mip"]["vars_per_graph"]
+        vars_inst_graph = torch.sparse_coo_tensor(vars_inst_edges, vars_inst_values, size=size, device=device)
 
         optimizer.zero_grad()
-        binary_assignments, decimal_assignments = network.forward(constr_adj_matrix, constr_b_values)
+        binary_assignments, decimal_assignments = network.forward(vars_constr_graph, constr_b_values)
 
+        loss = 0
         total_loss_o = 0
         total_loss_c = 0
         for asn in decimal_assignments:
-            loss_c = torch.relu(torch.squeeze(torch.sparse.mm(constr_adj_matrix.t(), asn)) - constr_b_values)
+            loss_c = torch.relu(torch.sparse.mm(vars_constr_graph.t(), asn) - torch.unsqueeze(constr_b_values, dim=-1))
             loss_c = torch.square(loss_c)
-            total_loss_c += torch.sum(loss_c)
+            loss_c = torch.sparse.mm(const_inst_graph.t(), loss_c)
 
-            loss_o = torch.squeeze(torch.sparse.mm(obj_adj_matrix.t(), asn))
-            total_loss_o += torch.sum(loss_o)  # Calculate mean over graphs
+            loss_o = torch.sparse.mm(obj_adj_matrix.t(), asn)
 
-            # TODO: collect per graph, then sum with optimization loss and the take mean
+            total_loss_c += torch.mean(loss_c)
+            total_loss_o += torch.mean(loss_o)  # Calculate mean over graphs
+            loss += torch.mean(loss_c + loss_o)
 
-        total_loss_o /= len(decimal_assignments)
-        total_loss_c /= len(decimal_assignments)
-        loss = total_loss_o + total_loss_c
+        steps_taken = len(decimal_assignments)
+
+        total_loss_o /= steps_taken
+        total_loss_c /= steps_taken
+        loss /= steps_taken
+
         loss_avg.update({"loss": loss, "loss_opt": total_loss_o, "loss_const": total_loss_c})
         disc_metric.update(torch.squeeze(decimal_assignments[-1]))
 
@@ -153,18 +167,31 @@ def evaluate_model(network, test_dataloader, dataset, eval_iterations=None):
     dataset.create_metrics()
     iterable = itertools.islice(test_dataloader, eval_iterations) if eval_iterations else test_dataloader
 
+    metrics = MIPMetrics()
+
+    device = torch.device('cuda:0')
+
     for batched_data in iterable:
-        edge_indices, edge_values, constr_b_values, size = batched_data["mip"]["constraints"]
-        constr_adj_matrix = torch.sparse_coo_tensor(edge_indices, edge_values, size=size, device=torch.device('cuda:0'))
+        vars_const_edges, vars_const_values, constr_b_values, size = batched_data["mip"]["constraints"]
+        vars_constr_graph = torch.sparse_coo_tensor(vars_const_edges, vars_const_values, size=size, device=device)
         constr_b_values = constr_b_values.cuda()
 
-        # obj_edge_indices, obj_edge_values, size = batched_data["mip"]["objective"]
-        # obj_adj_matrix = torch.sparse_coo_tensor(obj_edge_indices, obj_edge_values, size=size, device=torch.device('cuda:0'))
+        obj_edge_indices, obj_edge_values, size = batched_data["mip"]["objective"]
+        obj_adj_matrix = torch.sparse_coo_tensor(obj_edge_indices, obj_edge_values, size=size, device=device)
 
-        binary_assignments, decimal_assignments = network.forward(constr_adj_matrix, constr_b_values)
+        const_inst_edges, const_inst_values, size = batched_data["mip"]["consts_per_graph"]
+        const_inst_graph = torch.sparse_coo_tensor(const_inst_edges, const_inst_values, size=size, device=device)
+
+        vars_inst_edges, vars_inst_values, size = batched_data["mip"]["vars_per_graph"]
+        vars_inst_graph = torch.sparse_coo_tensor(vars_inst_edges, vars_inst_values, size=size, device=device)
+
+        binary_assignments, decimal_assignments = network.forward(vars_constr_graph, constr_b_values)
         dataset.evaluate_model_outputs(binary_assignments[-1], decimal_assignments[-1], batched_data)
 
-    return dataset.get_metrics()
+        predictions = dataset.decode_model_outputs(binary_assignments[-1], decimal_assignments[-1])
+        metrics.update(predictions, vars_constr_graph, constr_b_values, const_inst_graph)
+
+    return {**dataset.get_metrics(), **metrics.numpy_result}
 
 
 if __name__ == '__main__':
