@@ -86,7 +86,7 @@ class BoundedKnapsackDataset(MIPDataset, IterableDataset):
                                                  device=torch.device('cuda:0'))
 
         predicted_val = torch.sparse.mm(obj_adj_matrix.t(), torch.unsqueeze(model_output, dim=-1))
-        optimality_gap = -predicted_val / batched_data["computed_value"].cuda()
+        optimality_gap = 1 - predicted_val / batched_data["computed_value"].cuda()
         optimality_gap = torch.nan_to_num(optimality_gap, 0, 0, 0)
 
         self._average_metrics.update({"optimality_gap": torch.mean(optimality_gap)})
