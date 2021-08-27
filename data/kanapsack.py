@@ -92,7 +92,10 @@ class BoundedKnapsackDataset(MIPDataset, IterableDataset):
         optimality_gap = torch.nan_to_num(optimality_gap, 1, 1, 1)
         # TODO: Solve optimality gap only when constraints are satisfied
 
-        self._average_metrics.update({"optimality_gap": torch.mean(optimality_gap)})
+        found_optimum = torch.mean(torch.eq(predicted_val, computed_values).float())
+
+        self._average_metrics.update({"optimality_gap": torch.mean(optimality_gap),
+                                      "found_optimum": found_optimum})
         self._metrics_knapsack.update(model_output, constr_adj_matrix, constr_b_values)
 
     def get_metrics(self):
