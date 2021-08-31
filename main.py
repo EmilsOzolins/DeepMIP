@@ -107,6 +107,7 @@ def train(train_steps, experiment, network, optimizer, train_dataloader):
         vars_inst_edges, vars_inst_values, size = batched_data["mip"]["vars_per_graph"]
         vars_inst_graph = torch.sparse_coo_tensor(vars_inst_edges, vars_inst_values, size=size, device=device)
 
+        # TODO: Pass objective function to network
         optimizer.zero_grad()
         binary_assignments, decimal_assignments = network.forward(vars_constr_graph, constr_b_values)
 
