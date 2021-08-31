@@ -3,8 +3,8 @@ import os
 import time
 from pathlib import Path
 
-import torch.sparse
 from comet_ml import Experiment
+import torch.sparse
 from torch.utils.data import DataLoader, IterableDataset
 
 import config
@@ -19,7 +19,7 @@ from utils.visualize import format_metrics
 
 
 def main():
-    experiment = Experiment(disabled=True)  # Set to True to disable logging in comet.ml
+    experiment = Experiment(disabled=False)  # Set to True to disable logging in comet.ml
     experiment.log_parameters({x: getattr(params, x) for x in dir(params) if not x.startswith("__")})
     experiment.log_code(folder=str(Path().resolve()))
 
@@ -122,7 +122,7 @@ def train(train_steps, experiment, network, optimizer, train_dataloader):
 
             total_loss_c += torch.mean(loss_c)
             total_loss_o += torch.mean(loss_o)  # Calculate mean over graphs
-            loss += torch.mean(loss_c + loss_o)
+            loss += torch.mean(loss_c + loss_o * 0.1)
 
         steps_taken = len(decimal_assignments)
 

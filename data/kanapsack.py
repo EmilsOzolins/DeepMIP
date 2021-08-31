@@ -31,10 +31,10 @@ class BoundedKnapsackDataset(MIPDataset, IterableDataset):
         def generator():
             while True:
                 var_count = random.randint(self._min_variables, self._max_variables)
-                weights = [random.randint(0, self._max_weight) for _ in range(var_count)]
-                values = [random.randint(0, self._max_values) for _ in range(var_count)]
-                copies = [random.randint(1, self._max_copies) for _ in range(var_count)]
                 var_indices = [i for i in range(var_count)]
+                weights = [random.randint(0, self._max_weight) for _ in var_indices]
+                values = [random.randint(0, self._max_values) for _ in var_indices]
+                copies = [random.randint(1, self._max_copies) for _ in var_indices]
 
                 max_weight = sum([w * c for w, c in zip(weights, copies)])
                 min_weight = min(weights)
@@ -50,13 +50,14 @@ class BoundedKnapsackDataset(MIPDataset, IterableDataset):
     def get_optimal_value(self, weights, values, capacities):
         pass
 
-    @staticmethod
-    def convert_to_mip(var_indices, weights, values, copies, capacity):
+    def convert_to_mip(self, var_indices, weights, values, copies, capacity):
         ip = IPInstance(len(var_indices))
 
+        # Each element is available c times
         for ind, c in zip(var_indices, copies):
             ip.less_or_equal([ind], [1], c)
 
+        # Weight less or equal with the knapsack capacity
         ip.less_or_equal(var_indices, weights, capacity)
         ip.maximize_objective(var_indices, values)
 
@@ -92,11 +93,10 @@ class BoundedKnapsackDataset(MIPDataset, IterableDataset):
         predicted_val = torch.sparse.mm(obj_adj_matrix.t(), torch.unsqueeze(model_output, dim=-1))
 
         computed_values = batched_data["computed_value"].cuda()
-        optimality_gap = (torch.abs(computed_values + predicted_val) / computed_values)
-        optimality_gap = torch.nan_to_num(optimality_gap, 1, 1, 1)
+        optimality_gap = torch.abs(computed_values + predicted_val)
         # TODO: Solve optimality gap only when constraints are satisfied
 
-        found_optimum = torch.eq(-predicted_val, computed_values)
+        found_optimum = torch.eq(-predicted_val.int(), computed_values.int())
 
         results = torch.sparse.mm(constr_adj_matrix.t(), torch.unsqueeze(model_output, dim=-1))
         satisfied = torch.less_equal(results, torch.unsqueeze(constr_b_values, dim=-1)).float()
@@ -118,7 +118,7 @@ class BoundedKnapsackDataset(MIPDataset, IterableDataset):
 
 class BinaryKnapsackDataset(BoundedKnapsackDataset):
 
-    def __init__(self, min_variables, max_variables, max_weight=10, max_values=10) -> None:
+    def __init__(self, min_variables, max_variables, max_weight=5, max_values=5) -> None:
         super().__init__(min_variables, max_variables, max_copies=1, max_weight=max_weight, max_values=max_values)
 
     def decode_model_outputs(self, binary_assignment, decimal_assignment):
@@ -131,6 +131,13 @@ class BinaryKnapsackDataset(BoundedKnapsackDataset):
 
         solver.Init(values, [weights], capacities)
         return solver.Solve()
+
+    def convert_to_mip(self, var_indices, weights, values, copies, capacity):
+        ip = IPInstance(len(var_indices))
+        ip.less_or_equal(var_indices, weights, capacity)
+        ip.maximize_objective(var_indices, values)
+
+        return ip
 
 # TODO: Unbounded Knapsack dataset
 

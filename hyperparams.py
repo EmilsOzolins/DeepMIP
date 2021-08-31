@@ -1,5 +1,5 @@
 # Training
-train_steps = 100000
+train_steps = 300000
 
 # Data
 batch_size = 32
