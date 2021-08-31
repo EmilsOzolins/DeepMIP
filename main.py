@@ -19,7 +19,7 @@ from utils.visualize import format_metrics
 
 
 def main():
-    experiment = Experiment(disabled=False)  # Set to True to disable logging in comet.ml
+    experiment = Experiment(disabled=True)  # Set to True to disable logging in comet.ml
     experiment.log_parameters({x: getattr(params, x) for x in dir(params) if not x.startswith("__")})
     experiment.log_code(folder=str(Path().resolve()))
 
@@ -95,21 +95,24 @@ def train(train_steps, experiment, network, optimizer, train_dataloader):
     for batched_data in itertools.islice(train_dataloader, train_steps):
 
         vars_const_edges, vars_const_values, constr_b_values, size = batched_data["mip"]["constraints"]
-        vars_constr_graph = torch.sparse_coo_tensor(vars_const_edges, vars_const_values, size=size, device=device)
+        vars_constr_graph = torch.sparse_coo_tensor(vars_const_edges, vars_const_values, size=size,
+                                                    device=device).coalesce()
         constr_b_values = constr_b_values.cuda()
 
         obj_edge_indices, obj_edge_values, size = batched_data["mip"]["objective"]
-        obj_adj_matrix = torch.sparse_coo_tensor(obj_edge_indices, obj_edge_values, size=size, device=device)
+        obj_adj_matrix = torch.sparse_coo_tensor(obj_edge_indices, obj_edge_values, size=size, device=device).coalesce()
 
         const_inst_edges, const_inst_values, size = batched_data["mip"]["consts_per_graph"]
-        const_inst_graph = torch.sparse_coo_tensor(const_inst_edges, const_inst_values, size=size, device=device)
+        const_inst_graph = torch.sparse_coo_tensor(const_inst_edges, const_inst_values, size=size,
+                                                   device=device).coalesce()
 
         vars_inst_edges, vars_inst_values, size = batched_data["mip"]["vars_per_graph"]
-        vars_inst_graph = torch.sparse_coo_tensor(vars_inst_edges, vars_inst_values, size=size, device=device)
+        vars_inst_graph = torch.sparse_coo_tensor(vars_inst_edges, vars_inst_values, size=size,
+                                                  device=device).coalesce()
 
         # TODO: Pass objective function to network
         optimizer.zero_grad()
-        binary_assignments, decimal_assignments = network.forward(vars_constr_graph, constr_b_values, obj_adj_matrix)
+        binary_assignments, decimal_assignments = network.forward(vars_constr_graph, constr_b_values, obj_adj_matrix, const_inst_graph)
 
         loss = 0
         total_loss_o = 0
@@ -123,7 +126,7 @@ def train(train_steps, experiment, network, optimizer, train_dataloader):
 
             total_loss_c += torch.mean(loss_c)
             total_loss_o += torch.mean(loss_o)  # Calculate mean over graphs
-            loss += torch.mean(loss_c + loss_o)
+            loss += torch.mean(loss_c + loss_o * 0.2)
 
         steps_taken = len(decimal_assignments)
 
@@ -174,19 +177,23 @@ def evaluate_model(network, test_dataloader, dataset, eval_iterations=None):
 
     for batched_data in iterable:
         vars_const_edges, vars_const_values, constr_b_values, size = batched_data["mip"]["constraints"]
-        vars_constr_graph = torch.sparse_coo_tensor(vars_const_edges, vars_const_values, size=size, device=device)
+        vars_constr_graph = torch.sparse_coo_tensor(vars_const_edges, vars_const_values, size=size,
+                                                    device=device).coalesce()
         constr_b_values = constr_b_values.cuda()
 
         obj_edge_indices, obj_edge_values, size = batched_data["mip"]["objective"]
-        obj_adj_matrix = torch.sparse_coo_tensor(obj_edge_indices, obj_edge_values, size=size, device=device)
+        obj_adj_matrix = torch.sparse_coo_tensor(obj_edge_indices, obj_edge_values, size=size, device=device).coalesce()
 
         const_inst_edges, const_inst_values, size = batched_data["mip"]["consts_per_graph"]
-        const_inst_graph = torch.sparse_coo_tensor(const_inst_edges, const_inst_values, size=size, device=device)
+        const_inst_graph = torch.sparse_coo_tensor(const_inst_edges, const_inst_values, size=size,
+                                                   device=device).coalesce()
 
         vars_inst_edges, vars_inst_values, size = batched_data["mip"]["vars_per_graph"]
-        vars_inst_graph = torch.sparse_coo_tensor(vars_inst_edges, vars_inst_values, size=size, device=device)
+        vars_inst_graph = torch.sparse_coo_tensor(vars_inst_edges, vars_inst_values, size=size,
+                                                  device=device).coalesce()
 
-        binary_assignments, decimal_assignments = network.forward(vars_constr_graph, constr_b_values, obj_adj_matrix)
+        binary_assignments, decimal_assignments = network.forward(vars_constr_graph, constr_b_values, obj_adj_matrix,
+                                                                  const_inst_graph)
         dataset.evaluate_model_outputs(binary_assignments[-1], decimal_assignments[-1], batched_data)
 
         predictions = dataset.decode_model_outputs(binary_assignments[-1], decimal_assignments[-1])
