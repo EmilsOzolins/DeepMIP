@@ -20,6 +20,13 @@ class MIPNetwork(torch.nn.Module):
         )
 
         self.variable_update = nn.Sequential(
+            nn.Linear(self.feature_maps * 3, self.feature_maps),
+            nn.ReLU(),
+            nn.Linear(self.feature_maps, self.feature_maps),
+            PairNorm()
+        )
+
+        self.objective_update = nn.Sequential(
             nn.Linear(self.feature_maps * 2, self.feature_maps),
             nn.ReLU(),
             nn.Linear(self.feature_maps, self.feature_maps),
@@ -45,7 +52,8 @@ class MIPNetwork(torch.nn.Module):
         self.powers_of_two = torch.as_tensor([2 ** k for k in range(0, output_bits)], dtype=torch.float32,
                                              device=torch.device('cuda:0'))
 
-    def forward(self, adj_matrix: torch.sparse.Tensor, conditions_values: torch.Tensor):
+    def forward(self, adj_matrix: torch.sparse.Tensor, conditions_values: torch.Tensor,
+                vars_obj_graph: torch.sparse.Tensor):
         """
         :param adj_matrix: Adjacency matrix of MIP factor graph with size [var_count x constraint_count]
         :return: variable assignments with the size [var_count]
@@ -55,6 +63,10 @@ class MIPNetwork(torch.nn.Module):
         variables = torch.ones([var_count, self.feature_maps], device=torch.device('cuda:0'))
         constraints = emb_value = self.prepare_cond(torch.unsqueeze(conditions_values, dim=-1))
 
+        _, objective_count = vars_obj_graph.size()
+
+        objectives = torch.ones([objective_count, self.feature_maps], device=torch.device('cuda:0'))
+
         binary_outputs = []
         decimal_outputs = []
 
@@ -63,9 +75,14 @@ class MIPNetwork(torch.nn.Module):
             var2const_msg = torch.cat([constraints, emb_value, var2const_msg], dim=-1)
             constraints = self.constraint_update(var2const_msg)
 
+            var2obj_msg = torch.mm(vars_obj_graph.t(), variables)
+            var2obj_msg = torch.cat([var2obj_msg, objectives], dim=-1)
+            objectives = self.objective_update(var2obj_msg)
+
             const2var_msg = torch.mm(adj_matrix, constraints)
-            const2var_msg = torch.cat([variables, const2var_msg], dim=-1)
-            variables = self.variable_update(const2var_msg)
+            obj2var_msg = torch.mm(vars_obj_graph, objectives)
+            graph2var_msg = torch.cat([variables, const2var_msg, obj2var_msg], dim=-1)
+            variables = self.variable_update(graph2var_msg)
 
             out_vars = self.output(variables)
             out = torch.sigmoid(out_vars + self.noise.sample(out_vars.size()).cuda())
