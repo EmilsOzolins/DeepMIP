@@ -36,9 +36,9 @@ def main():
     # train_dataset = IntegerSudokuDataset(sudoku_train_data)
     # val_dataset = IntegerSudokuDataset(sudoku_val_data)
 
-    test_dataset = BinaryKnapsackDataset(2, 10)
-    train_dataset = BinaryKnapsackDataset(2, 10)
-    val_dataset = BinaryKnapsackDataset(2, 10)
+    test_dataset = BinaryKnapsackDataset(5, 5)
+    train_dataset = BinaryKnapsackDataset(5, 5)
+    val_dataset = BinaryKnapsackDataset(5, 5)
 
     train_dataloader = create_data_loader(train_dataset)
     validation_dataloader = create_data_loader(val_dataset)
@@ -122,7 +122,7 @@ def train(train_steps, experiment, network, optimizer, train_dataloader):
 
             total_loss_c += torch.mean(loss_c)
             total_loss_o += torch.mean(loss_o)  # Calculate mean over graphs
-            loss += torch.mean(loss_c + loss_o * 0.1)
+            loss += torch.mean(loss_c + loss_o)
 
         steps_taken = len(decimal_assignments)
 

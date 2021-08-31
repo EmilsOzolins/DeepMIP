@@ -118,7 +118,7 @@ class BoundedKnapsackDataset(MIPDataset, IterableDataset):
 
 class BinaryKnapsackDataset(BoundedKnapsackDataset):
 
-    def __init__(self, min_variables, max_variables, max_weight=5, max_values=5) -> None:
+    def __init__(self, min_variables, max_variables, max_weight=1, max_values=1) -> None:
         super().__init__(min_variables, max_variables, max_copies=1, max_weight=max_weight, max_values=max_values)
 
     def decode_model_outputs(self, binary_assignment, decimal_assignment):
