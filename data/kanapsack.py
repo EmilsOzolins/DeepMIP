@@ -32,7 +32,7 @@ class BoundedKnapsackDataset(MIPDataset, IterableDataset):
             while True:
                 var_count = random.randint(self._min_variables, self._max_variables)
                 var_indices = [i for i in range(var_count)]
-                weights = [random.randint(0, self._max_weight) for _ in var_indices]
+                weights = [random.randint(1, self._max_weight) for _ in var_indices]
                 values = [random.randint(0, self._max_values) for _ in var_indices]
                 copies = [random.randint(1, self._max_copies) for _ in var_indices]
 
@@ -91,12 +91,14 @@ class BoundedKnapsackDataset(MIPDataset, IterableDataset):
                                                    device=torch.device('cuda:0'))
 
         predicted_val = torch.sparse.mm(obj_adj_matrix.t(), torch.unsqueeze(model_output, dim=-1))
+        predicted_val = torch.abs(predicted_val)
 
         computed_values = batched_data["computed_value"].cuda()
-        optimality_gap = torch.abs(computed_values + predicted_val)
+        optimality_gap = torch.abs(computed_values - predicted_val)
         # TODO: Solve optimality gap only when constraints are satisfied
 
-        found_optimum = torch.eq(-predicted_val.int(), computed_values.int())
+        found_optimum = torch.eq(predicted_val.int(), computed_values.int())
+        found_optimum = torch.squeeze(found_optimum)
 
         results = torch.sparse.mm(constr_adj_matrix.t(), torch.unsqueeze(model_output, dim=-1))
         satisfied = torch.less_equal(results, torch.unsqueeze(constr_b_values, dim=-1)).float()

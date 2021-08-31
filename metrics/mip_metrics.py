@@ -10,23 +10,18 @@ class MIPMetrics(AverageMetric):
 
     def update(self, predictions, vars_const_graph, b_values, const_inst_graph):
         super(MIPMetrics, self).update(
-            {"satisfied_constraints": self._satisfied_constraints(predictions, vars_const_graph, b_values,
-                                                                  const_inst_graph),
+            {"satisfied_constraints": self._satisfied_constraints(predictions, vars_const_graph, b_values, const_inst_graph),
              "fully_satisfied_mips": self._fully_satisfied(predictions, vars_const_graph, b_values, const_inst_graph)
 
              }
         )
 
     def _satisfied_constraints(self, predictions, constraints_adj_matrix, b_values, const_inst_graph):
-        const_count, sat_per_inst = self._sat_and_total_constraints(b_values, const_inst_graph,
-                                                                    constraints_adj_matrix, predictions)
-
+        const_count, sat_per_inst = self._sat_and_total_constraints(b_values, const_inst_graph, constraints_adj_matrix, predictions)
         return torch.mean(sat_per_inst / const_count)
 
     def _fully_satisfied(self, predictions, constraints_adj_matrix, b_values, const_inst_graph):
-        const_count, sat_per_inst = self._sat_and_total_constraints(b_values, const_inst_graph,
-                                                                    constraints_adj_matrix, predictions)
-
+        const_count, sat_per_inst = self._sat_and_total_constraints(b_values, const_inst_graph, constraints_adj_matrix, predictions)
         sat_instances = torch.eq(sat_per_inst, const_count).float()
         return torch.mean(sat_instances)
 
