@@ -10,8 +10,8 @@ from torch.utils.data import DataLoader, IterableDataset
 import config
 import hyperparams as params
 from data.kanapsack import BinaryKnapsackDataset
-from metrics.average_metrics import AverageMetric
-from metrics.discrete_metrics import DiscretizationMetric
+from metrics.general_metrics import AverageMetrics
+from metrics.discrete_metrics import DiscretizationMetrics
 from metrics.mip_metrics import MIPMetrics
 from model.mip_network import MIPNetwork
 from utils.data import batch_data, MIPBatch
@@ -87,8 +87,8 @@ def main():
 
 def train(train_steps, experiment, network, optimizer, train_dataloader):
     start = time.time()
-    loss_avg = AverageMetric()
-    disc_metric = DiscretizationMetric()
+    loss_avg = AverageMetrics()
+    disc_metric = DiscretizationMetrics()
 
     for batched_data in itertools.islice(train_dataloader, train_steps):
         batch = MIPBatch(batched_data, torch.device(config.device))
@@ -101,8 +101,8 @@ def train(train_steps, experiment, network, optimizer, train_dataloader):
         total_loss_o = 0
         total_loss_c = 0
         for asn in decimal_assignments:
-            loss_c = torch.relu(
-                torch.sparse.mm(batch.vars_const_graph.t(), asn) - torch.unsqueeze(batch.const_values, dim=-1))
+            left_side = torch.sparse.mm(batch.vars_const_graph.t(), asn)
+            loss_c = torch.relu(left_side - torch.unsqueeze(batch.const_values, dim=-1))
             # loss_c = torch.square(loss_c)
             loss_c = torch.sparse.mm(batch.const_inst_graph.t(), loss_c)
 
@@ -111,8 +111,7 @@ def train(train_steps, experiment, network, optimizer, train_dataloader):
             total_loss_c += torch.mean(loss_c)
             total_loss_o += torch.mean(loss_o)  # Calculate mean over graphs
 
-            s = torch.distributions.Uniform(0, 0.5).sample(loss_c.size()).cuda()
-            loss += torch.mean(loss_c * (1 - s) + loss_o * s)
+            loss += torch.mean(loss_c + loss_o * 0.3)
 
         steps_taken = len(decimal_assignments)
 
@@ -120,7 +119,7 @@ def train(train_steps, experiment, network, optimizer, train_dataloader):
         total_loss_c /= steps_taken
         loss /= steps_taken
 
-        loss_avg.update({"loss": loss, "loss_opt": total_loss_o, "loss_const": total_loss_c})
+        loss_avg.update(loss=loss, loss_opt=total_loss_o, loss_const=total_loss_c)
         disc_metric.update(torch.squeeze(decimal_assignments[-1]))
 
         loss.backward()

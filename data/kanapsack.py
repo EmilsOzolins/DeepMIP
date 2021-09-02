@@ -8,7 +8,7 @@ from torch.utils.data import IterableDataset
 
 from data.datasets_base import MIPDataset
 from data.ip_instance import IPInstance
-from metrics.average_metrics import AverageMetric
+from metrics.general_metrics import AverageMetrics
 from metrics.knapsack_metrics import KnapsackMetrics
 
 
@@ -73,7 +73,7 @@ class BoundedKnapsackDataset(MIPDataset, IterableDataset):
 
     def create_metrics(self):
         self._metrics_knapsack = KnapsackMetrics()
-        self._average_metrics = AverageMetric()
+        self._average_metrics = AverageMetrics()
 
     def evaluate_model_outputs(self, binary_assignment, decimal_assignment, batched_data):
         model_output = self.decode_model_outputs(binary_assignment, decimal_assignment)
@@ -83,10 +83,12 @@ class BoundedKnapsackDataset(MIPDataset, IterableDataset):
         constr_b_values = constr_b_values.cuda()
 
         obj_edge_indices, obj_edge_values, size = batched_data["mip"]["objective"]
-        obj_adj_matrix = torch.sparse_coo_tensor(obj_edge_indices, obj_edge_values, size=size, device=torch.device('cuda:0'))
+        obj_adj_matrix = torch.sparse_coo_tensor(obj_edge_indices, obj_edge_values, size=size,
+                                                 device=torch.device('cuda:0'))
 
         const_inst_edges, const_inst_values, size = batched_data["mip"]["consts_per_graph"]
-        const_inst_graph = torch.sparse_coo_tensor(const_inst_edges, const_inst_values, size=size, device=torch.device('cuda:0'))
+        const_inst_graph = torch.sparse_coo_tensor(const_inst_edges, const_inst_values, size=size,
+                                                   device=torch.device('cuda:0'))
 
         predicted_val = torch.sparse.mm(obj_adj_matrix.t(), torch.unsqueeze(model_output, dim=-1))
         predicted_val = torch.abs(predicted_val)
@@ -106,10 +108,10 @@ class BoundedKnapsackDataset(MIPDataset, IterableDataset):
 
         totally_solved = torch.logical_and(sat_instances, found_optimum).float()
 
-        self._average_metrics.update({"optimality_gap": torch.mean(optimality_gap),
-                                      "optimality_gap_max": torch.max(optimality_gap),
-                                      "found_optimum": torch.mean(found_optimum.float()),
-                                      "totally_solved": torch.mean(totally_solved)})
+        self._average_metrics.update(optimality_gap=torch.mean(optimality_gap),
+                                     optimality_gap_max=torch.max(optimality_gap),
+                                     found_optimum=torch.mean(found_optimum.float()),
+                                     totally_solved=torch.mean(totally_solved))
         self._metrics_knapsack.update(model_output, constr_adj_matrix, constr_b_values)
 
     def get_metrics(self):

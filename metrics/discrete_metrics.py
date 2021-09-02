@@ -1,19 +1,27 @@
 import torch
 
-from metrics.average_metrics import AverageMetric
+from metrics.general_metrics import AverageMetrics, Metrics
 
 
-class DiscretizationMetric(AverageMetric):
-
+class DiscretizationMetrics(Metrics):
     def __init__(self) -> None:
         super().__init__()
+        self._avg = AverageMetrics()
 
-    def update(self, binary_prediction: torch.Tensor) -> None:
-        super(DiscretizationMetric, self).update({
-            "discrete_vs_continuous": self._discrete_vs_continuous(binary_prediction),
-            "discrete_variables": self._count_discrete_variables(binary_prediction),
-            "max_diff_to_discrete": self._max_diff_to_discrete(binary_prediction),
-        })
+    def update(self, binary_prediction: torch.Tensor, **kwargs) -> None:
+        self._avg.update(
+            discrete_vs_continuous=self._discrete_vs_continuous(binary_prediction),
+            discrete_variables=self._count_discrete_variables(binary_prediction),
+            max_diff_to_discrete=self._max_diff_to_discrete(binary_prediction),
+        )
+
+    @property
+    def result(self):
+        return self._avg.result
+
+    @property
+    def numpy_result(self):
+        return self._avg.numpy_result
 
     def _count_discrete_variables(self, binary_prediction: torch.Tensor):
         discrete_vars = self._count_discrete_per_instance(binary_prediction)
@@ -32,7 +40,8 @@ class DiscretizationMetric(AverageMetric):
         discrete_vars = torch.sum(values, dim=-1)
         return discrete_vars
 
-    def _max_diff_to_discrete(self, binary_prediction: torch.Tensor):
+    @staticmethod
+    def _max_diff_to_discrete(binary_prediction: torch.Tensor):
         values = torch.round(binary_prediction) - binary_prediction
         values = torch.abs(values)
         values = torch.max(values, dim=-1).values

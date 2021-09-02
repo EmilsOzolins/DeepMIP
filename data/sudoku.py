@@ -8,7 +8,7 @@ from torch.utils.data.dataset import Dataset
 import hyperparams as params
 from data.datasets_base import MIPDataset
 from data.ip_instance import IPInstance
-from metrics.sudoku_metrics import SudokuMetric
+from metrics.sudoku_metrics import SudokuMetrics
 
 
 class IPSudokuDataset(MIPDataset, Dataset, ABC):
@@ -17,7 +17,7 @@ class IPSudokuDataset(MIPDataset, Dataset, ABC):
         csv = pd.read_csv(csv_file, header=0)
         self.features = csv["quizzes"]
         self.labels = csv["solutions"]
-        self._sudoku_metrics = SudokuMetric()
+        self._sudoku_metrics = SudokuMetrics()
 
     def __getitem__(self, index) -> Dict:
         x = self.features[index]
@@ -52,7 +52,7 @@ class IPSudokuDataset(MIPDataset, Dataset, ABC):
         pass
 
     def create_metrics(self):
-        self._sudoku_metrics = SudokuMetric()
+        self._sudoku_metrics = SudokuMetrics()
 
     def evaluate_model_outputs(self, binary_assignment, decimal_assignment, batched_data: dict):
         givens = batched_data["givens"].cuda()

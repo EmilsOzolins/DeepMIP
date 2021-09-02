@@ -1,25 +1,33 @@
 import torch
 
-from metrics.average_metrics import AverageMetric
+from metrics.general_metrics import AverageMetrics, Metrics
 
 
 # TODO: Make Metric holder, where several metrics can be stored together
 
-class SudokuMetric(AverageMetric):
+class SudokuMetrics(Metrics):
 
     def __init__(self) -> None:
         super().__init__()
+        self._avg = AverageMetrics()
 
     def update(self, prediction, givens, solution):
-        super(SudokuMetric, self).update(
-            {"rows_acc": self._rows_accuracy(prediction),
-             "col_acc": self._columns_accuracy(prediction),
-             "givens_acc": self._givens_accuracy(prediction, givens),
-             "range_acc": self._range_accuracy(prediction),
-             "square_acc": self._subsquare_accuracy(prediction),
-             "full_acc": self._full_accuracy(prediction, solution)
-             }
+        self._avg.update(
+            rows_acc=self._rows_accuracy(prediction),
+            col_acc=self._columns_accuracy(prediction),
+            givens_acc=self._givens_accuracy(prediction, givens),
+            range_acc=self._range_accuracy(prediction),
+            square_acc=self._subsquare_accuracy(prediction),
+            full_acc=self._full_accuracy(prediction, solution)
         )
+
+    @property
+    def result(self):
+        return self._avg.result
+
+    @property
+    def numpy_result(self):
+        return self._avg.numpy_result
 
     @staticmethod
     def _rows_accuracy(inputs):
