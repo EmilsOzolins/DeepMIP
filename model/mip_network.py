@@ -84,9 +84,6 @@ class MIPNetwork(torch.nn.Module):
             out_vars = self.output(variables)
             out = torch.sigmoid(out_vars + self.noise.sample(out_vars.size()).cuda())
 
-            # Straight-Through gradient estimator
-            # out = torch.round(out) - out.detach() + out
-
             binary_outputs.append(out)
 
             decimal_pred = torch.sum(self.powers_of_two * out, dim=-1, keepdim=True)

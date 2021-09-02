@@ -1,4 +1,7 @@
 from abc import ABC, abstractmethod
+from typing import List
+
+from metrics.general_metrics import Metrics
 
 
 class MIPDataset(ABC):
@@ -10,7 +13,7 @@ class MIPDataset(ABC):
 
     # @property
     # @abstractmethod
-    # def metrics(self):
+    # def metrics(self) -> List[Metrics]:
     #     pass
 
     # TODO: Instead of these return list of metrics that should be used
