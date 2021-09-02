@@ -76,6 +76,7 @@ class BoundedKnapsackDataset(MIPDataset, IterableDataset):
         self._average_metrics = AverageMetrics()
 
     def evaluate_model_outputs(self, binary_assignment, decimal_assignment, batched_data):
+        # TODO: These are MIP metrics, move to mip_metrics
         model_output = self.decode_model_outputs(binary_assignment, decimal_assignment)
 
         edge_indices, edge_values, constr_b_values, size = batched_data["mip"]["constraints"]
@@ -120,7 +121,7 @@ class BoundedKnapsackDataset(MIPDataset, IterableDataset):
 
 class BinaryKnapsackDataset(BoundedKnapsackDataset):
 
-    def __init__(self, min_variables, max_variables, max_weight=1, max_values=1) -> None:
+    def __init__(self, min_variables, max_variables, max_weight=20, max_values=20) -> None:
         super().__init__(min_variables, max_variables, max_copies=1, max_weight=max_weight, max_values=max_values)
 
     def decode_model_outputs(self, binary_assignment, decimal_assignment):
