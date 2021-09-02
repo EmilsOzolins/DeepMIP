@@ -46,11 +46,10 @@ class MIPNetwork(torch.nn.Module):
             PairNorm()
         )
 
-        self.noise = torch.distributions.Normal(0, 4)
+        self.noise = torch.distributions.Normal(0, 1)
 
         self.step = 0
-        self.powers_of_two = torch.as_tensor([2 ** k for k in range(0, output_bits)], dtype=torch.float32,
-                                             device=torch.device('cuda:0'))
+        self.powers_of_two = torch.as_tensor([2 ** k for k in range(0, output_bits)], dtype=torch.float32, device=torch.device('cuda:0'))
 
     def forward(self, adj_matrix: torch.sparse.Tensor, conditions_values: torch.Tensor,
                 vars_obj_graph: torch.sparse.Tensor, const_inst_graph: torch.sparse.Tensor):

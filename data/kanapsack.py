@@ -83,12 +83,10 @@ class BoundedKnapsackDataset(MIPDataset, IterableDataset):
         constr_b_values = constr_b_values.cuda()
 
         obj_edge_indices, obj_edge_values, size = batched_data["mip"]["objective"]
-        obj_adj_matrix = torch.sparse_coo_tensor(obj_edge_indices, obj_edge_values, size=size,
-                                                 device=torch.device('cuda:0'))
+        obj_adj_matrix = torch.sparse_coo_tensor(obj_edge_indices, obj_edge_values, size=size, device=torch.device('cuda:0'))
 
         const_inst_edges, const_inst_values, size = batched_data["mip"]["consts_per_graph"]
-        const_inst_graph = torch.sparse_coo_tensor(const_inst_edges, const_inst_values, size=size,
-                                                   device=torch.device('cuda:0'))
+        const_inst_graph = torch.sparse_coo_tensor(const_inst_edges, const_inst_values, size=size, device=torch.device('cuda:0'))
 
         predicted_val = torch.sparse.mm(obj_adj_matrix.t(), torch.unsqueeze(model_output, dim=-1))
         predicted_val = torch.abs(predicted_val)

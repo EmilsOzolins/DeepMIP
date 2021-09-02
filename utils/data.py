@@ -1,4 +1,5 @@
 from collections import defaultdict
+from functools import cached_property
 from typing import Tuple, List, Dict
 
 import torch
@@ -116,3 +117,35 @@ def batch_as_mip(mip_instances: Tuple[IPInstance]) -> Dict[str, Tuple]:
 
 def batch_as_tensor(batch_data: Tuple[Tensor]):
     return torch.stack(batch_data, dim=0)
+
+
+class MIPBatch:
+
+    def __init__(self, batched_data: dict, device) -> None:
+        self._batched_data = batched_data
+        self._device = device
+
+    @cached_property
+    def vars_const_graph(self):
+        indices, values, _, size = self._batched_data["mip"]["constraints"]
+        return torch.sparse_coo_tensor(indices, values, size=size, device=self._device).coalesce()
+
+    @cached_property
+    def const_values(self):
+        *_, constraint_values, _ = self._batched_data["mip"]["constraints"]
+        return constraint_values.to(device=self._device)
+
+    @cached_property
+    def vars_obj_graph(self):
+        indices, values, size = self._batched_data["mip"]["objective"]
+        return torch.sparse_coo_tensor(indices, values, size=size, device=self._device).coalesce()
+
+    @cached_property
+    def const_inst_graph(self):
+        indices, values, size = self._batched_data["mip"]["consts_per_graph"]
+        return torch.sparse_coo_tensor(indices, values, size=size, device=self._device).coalesce()
+
+    @cached_property
+    def vars_inst_graph(self):
+        indices, values, size = self._batched_data["mip"]["vars_per_graph"]
+        return torch.sparse_coo_tensor(indices, values, size=size, device=self._device).coalesce()
