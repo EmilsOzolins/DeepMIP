@@ -11,20 +11,16 @@ class MIPDataset(ABC):
     def required_output_bits(self):
         pass
 
-    # @property
-    # @abstractmethod
-    # def metrics(self) -> List[Metrics]:
-    #     pass
-
-    # TODO: Instead of these return list of metrics that should be used
+    @property
     @abstractmethod
-    def create_metrics(self):
+    def test_metrics(self) -> List[Metrics]:
+        pass
+
+    @property
+    @abstractmethod
+    def train_metrics(self) -> List[Metrics]:
         pass
 
     @abstractmethod
-    def evaluate_model_outputs(self, binary_assignment, decimal_assignment, batched_data):
-        pass
-
-    @abstractmethod
-    def get_metrics(self):
+    def decode_model_outputs(self, binary_prediction, decimal_prediction):
         pass

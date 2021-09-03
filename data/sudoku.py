@@ -1,5 +1,5 @@
 from abc import abstractmethod, ABC
-from typing import Dict
+from typing import Dict, List
 
 import pandas as pd
 import torch
@@ -8,6 +8,7 @@ from torch.utils.data.dataset import Dataset
 import hyperparams as params
 from data.datasets_base import MIPDataset
 from data.ip_instance import IPInstance
+from metrics.general_metrics import Metrics
 from metrics.sudoku_metrics import SudokuMetrics
 
 
@@ -51,18 +52,13 @@ class IPSudokuDataset(MIPDataset, Dataset, ABC):
     def decode_model_outputs(self, binary_assignment, decimal_assignment):
         pass
 
-    def create_metrics(self):
-        self._sudoku_metrics = SudokuMetrics()
+    @property
+    def test_metrics(self) -> List[Metrics]:
+        return [SudokuMetrics()]
 
-    def evaluate_model_outputs(self, binary_assignment, decimal_assignment, batched_data: dict):
-        givens = batched_data["givens"].cuda()
-        labels = batched_data["labels"].cuda()
-
-        assignment = self.decode_model_outputs(binary_assignment, decimal_assignment)
-        self._sudoku_metrics.update(assignment, givens, labels)
-
-    def get_metrics(self):
-        return self._sudoku_metrics.numpy_result
+    @property
+    def train_metrics(self) -> List[Metrics]:
+        return []
 
 
 class BinarySudokuDataset(IPSudokuDataset):

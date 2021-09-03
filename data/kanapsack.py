@@ -1,6 +1,6 @@
 import random
 from abc import abstractmethod
-from typing import Iterator, Dict
+from typing import Iterator, Dict, List
 
 import torch
 from ortools.algorithms import pywrapknapsack_solver
@@ -8,8 +8,7 @@ from torch.utils.data import IterableDataset
 
 from data.datasets_base import MIPDataset
 from data.ip_instance import IPInstance
-from metrics.general_metrics import AverageMetrics
-from metrics.knapsack_metrics import KnapsackMetrics
+from metrics.general_metrics import Metrics
 
 
 class BoundedKnapsackDataset(MIPDataset, IterableDataset):
@@ -71,53 +70,13 @@ class BoundedKnapsackDataset(MIPDataset, IterableDataset):
     def decode_model_outputs(self, binary_assignment, decimal_assignment):
         pass
 
-    def create_metrics(self):
-        self._metrics_knapsack = KnapsackMetrics()
-        self._average_metrics = AverageMetrics()
+    @property
+    def test_metrics(self) -> List[Metrics]:
+        return []
 
-    def evaluate_model_outputs(self, binary_assignment, decimal_assignment, batched_data):
-        return
-        # TODO: These are MIP metrics, move to mip_metrics
-        model_output = self.decode_model_outputs(binary_assignment, decimal_assignment)
-
-        edge_indices, edge_values, constr_b_values, size = batched_data["mip"]["constraints"]
-        constr_adj_matrix = torch.sparse_coo_tensor(edge_indices, edge_values, size=size, device=torch.device('cuda:0'))
-        constr_b_values = constr_b_values.cuda()
-
-        obj_edge_indices, obj_edge_values, size = batched_data["mip"]["objective"]
-        obj_adj_matrix = torch.sparse_coo_tensor(obj_edge_indices, obj_edge_values, size=size,
-                                                 device=torch.device('cuda:0'))
-
-        const_inst_edges, const_inst_values, size = batched_data["mip"]["consts_per_graph"]
-        const_inst_graph = torch.sparse_coo_tensor(const_inst_edges, const_inst_values, size=size,
-                                                   device=torch.device('cuda:0'))
-
-        predicted_val = torch.sparse.mm(obj_adj_matrix.t(), torch.unsqueeze(model_output, dim=-1))
-        predicted_val = torch.abs(predicted_val)
-
-        computed_values = batched_data["computed_value"].cuda()
-        optimality_gap = torch.abs(computed_values - predicted_val)
-        # TODO: Solve optimality gap only when constraints are satisfied
-
-        found_optimum = torch.eq(predicted_val.int(), computed_values.int())
-        found_optimum = torch.squeeze(found_optimum)
-
-        results = torch.sparse.mm(constr_adj_matrix.t(), torch.unsqueeze(model_output, dim=-1))
-        satisfied = torch.less_equal(results, torch.unsqueeze(constr_b_values, dim=-1)).float()
-        sat_per_inst = torch.squeeze(torch.sparse.mm(const_inst_graph.t(), satisfied))
-        const_count = torch.sparse.sum(const_inst_graph, dim=0).to_dense()
-        sat_instances = torch.eq(sat_per_inst, const_count)
-
-        totally_solved = torch.logical_and(sat_instances, found_optimum).float()
-
-        self._average_metrics.update(optimality_gap=torch.mean(optimality_gap),
-                                     optimality_gap_max=torch.max(optimality_gap),
-                                     found_optimum=torch.mean(found_optimum.float()),
-                                     totally_solved=torch.mean(totally_solved))
-        self._metrics_knapsack.update(model_output, constr_adj_matrix, constr_b_values)
-
-    def get_metrics(self):
-        return {**self._metrics_knapsack.numpy_result, **self._average_metrics.numpy_result}
+    @property
+    def train_metrics(self) -> List[Metrics]:
+        return []
 
 
 class BinaryKnapsackDataset(BoundedKnapsackDataset):
@@ -138,6 +97,7 @@ class BinaryKnapsackDataset(BoundedKnapsackDataset):
 
     def convert_to_mip(self, var_indices, weights, values, copies, capacity):
         ip = IPInstance(len(var_indices))
+
         ip.less_or_equal(var_indices, weights, capacity)
         ip.maximize_objective(var_indices, values)
 

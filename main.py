@@ -153,22 +153,22 @@ def create_data_loader(dataset):
 
 
 def evaluate_model(network, test_dataloader, dataset, eval_iterations=None):
-    dataset.create_metrics()
     iterable = itertools.islice(test_dataloader, eval_iterations) if eval_iterations else test_dataloader
 
-    metrics = MIPMetrics()
+    metrics = MIPMetrics()  # TODO: Replace with generic MetricsHandler
 
     for batched_data in iterable:
         batch = MIPBatch(batched_data, torch.device(config.device))
 
         binary_assignments, decimal_assignments = network.forward(batch.vars_const_graph, batch.const_values,
                                                                   batch.vars_obj_graph, batch.const_inst_graph)
-        dataset.evaluate_model_outputs(binary_assignments[-1], decimal_assignments[-1], batched_data)
-
         predictions = dataset.decode_model_outputs(binary_assignments[-1], decimal_assignments[-1])
-        metrics.update(predictions, batch.vars_const_graph, batch.const_values, batch.const_inst_graph, batch.vars_obj_graph, batch.optimal_solution)
 
-    return {**dataset.get_metrics(), **metrics.numpy_result}
+        # TODO: Create generic API for use with any dataset/metric
+        metrics.update(predictions, batch.vars_const_graph, batch.const_values, batch.const_inst_graph,
+                       batch.vars_obj_graph, batch.optimal_solution)
+
+    return metrics.numpy_result
 
 
 if __name__ == '__main__':
