@@ -1,9 +1,9 @@
 import torch
 
-from metrics.general_metrics import AverageMetrics, Metrics
+from metrics.general_metrics import AverageMetrics, Metrics, StackableMetrics
 
 
-class DiscretizationMetrics(Metrics):
+class DiscretizationMetrics(StackableMetrics):
     def __init__(self) -> None:
         super().__init__()
         self._avg = AverageMetrics()

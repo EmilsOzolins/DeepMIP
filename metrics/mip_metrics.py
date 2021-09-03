@@ -1,23 +1,32 @@
 import torch
 
-from metrics.general_metrics import AverageMetrics, Metrics
+from metrics.general_metrics import AverageMetrics, StackableMetrics
+from utils.data import MIPBatchHolder
 
 
-class MIPMetrics(Metrics):
+class MIPMetrics(StackableMetrics):
 
     def __init__(self) -> None:
         super().__init__()
         self._avg = AverageMetrics()
 
-    def update(self, predictions, vars_const_graph, const_values, const_inst_graph, vars_obj_graph, opt_value, **kwargs):
-        sat_const = self._satisfied_constraints(predictions, vars_const_graph, const_values)
-        fully_sat_mips = self._fully_satisfied(predictions, vars_const_graph, const_values, const_inst_graph)
+    def update(self, prediction: torch.Tensor, batch_holder: MIPBatchHolder, **kwargs):
+        vars_const_graph = batch_holder.vars_const_graph
+        const_values = batch_holder.const_values
+        const_inst_graph = batch_holder.const_inst_graph
 
-        mean_optimality_gap = self._mean_optimality_gap(vars_obj_graph, opt_value, predictions)
-        max_optimality_gap = self._max_optimality_gap(vars_obj_graph, opt_value, predictions)
+        sat_const = self._satisfied_constraints(prediction, vars_const_graph, const_values)
+        fully_sat_mips = self._fully_satisfied(prediction, vars_const_graph, const_values, const_inst_graph)
 
-        found_optimum = self._found_optimum(vars_obj_graph, opt_value, predictions)
-        fully_solved = self._totally_solved(vars_const_graph, const_inst_graph, const_values, vars_obj_graph, opt_value, predictions)
+        vars_obj_graph = batch_holder.vars_obj_graph
+        opt_value = batch_holder.optimal_solution
+
+        mean_optimality_gap = self._mean_optimality_gap(vars_obj_graph, opt_value, prediction)
+        max_optimality_gap = self._max_optimality_gap(vars_obj_graph, opt_value, prediction)
+
+        found_optimum = self._found_optimum(vars_obj_graph, opt_value, prediction)
+        fully_solved = self._totally_solved(vars_const_graph, const_inst_graph,
+                                            const_values, vars_obj_graph, opt_value, prediction)
 
         self._avg.update(
             satisfied_constraints=sat_const,

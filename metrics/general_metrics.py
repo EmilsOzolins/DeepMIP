@@ -4,6 +4,8 @@ from typing import List
 
 
 class Metrics(ABC):
+    """ Not intended for direct subclassing.
+    """
     def __init__(self) -> None:
         self._value = defaultdict(float)
         self._count = defaultdict(float)
@@ -21,7 +23,23 @@ class Metrics(ABC):
         return {k: v.detach().cpu().numpy() for k, v in self._value.items()}
 
 
-class AverageMetrics(Metrics):
+class StackableMetrics(Metrics, ABC):
+    """
+    Use this for case-specific metrics, for example metrics for Sudoku.
+    """
+    pass
+
+
+class PrimitiveMetrics(Metrics, ABC):
+    """
+    Use this for metrics that simply calculate some statistics over data,
+    e.g. Average, Median, etc.
+    It can be used as building block for StackableMetrics.
+    """
+    pass
+
+
+class AverageMetrics(PrimitiveMetrics):
 
     def __init__(self) -> None:
         super().__init__()
@@ -32,11 +50,17 @@ class AverageMetrics(Metrics):
             self._value[key] += (val - self._value[key]) / self._count[key]
 
 
-class MetricsHandler(Metrics):
+class MetricsHandler(StackableMetrics):
 
     def __init__(self, *metrics) -> None:
         super().__init__()
-        self._metrics: List[Metrics] = list(metrics)
+
+        for m in metrics:
+            if not isinstance(m, StackableMetrics):
+                raise RuntimeError("Only StackableMetrics can be handled by MetricsHandler!"
+                                   "Please override StackableMetrics or handle metrics yourself.")
+
+        self._metrics: List[StackableMetrics] = list(metrics)
 
     def update(self, **kwargs):
         for m in self._metrics:

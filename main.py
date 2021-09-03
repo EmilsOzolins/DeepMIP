@@ -10,11 +10,11 @@ from torch.utils.data import DataLoader, IterableDataset
 import config
 import hyperparams as params
 from data.kanapsack import BinaryKnapsackDataset
-from metrics.general_metrics import AverageMetrics
+from metrics.general_metrics import AverageMetrics, MetricsHandler
 from metrics.discrete_metrics import DiscretizationMetrics
 from metrics.mip_metrics import MIPMetrics
 from model.mip_network import MIPNetwork
-from utils.data import batch_data, MIPBatch
+from utils.data import batch_data, MIPBatchHolder
 from utils.visualize import format_metrics
 
 
@@ -91,7 +91,7 @@ def train(train_steps, experiment, network, optimizer, train_dataloader):
     disc_metric = DiscretizationMetrics()
 
     for batched_data in itertools.islice(train_dataloader, train_steps):
-        batch = MIPBatch(batched_data, torch.device(config.device))
+        batch = MIPBatchHolder(batched_data, torch.device(config.device))
 
         optimizer.zero_grad()
         binary_assignments, decimal_assignments = network.forward(batch.vars_const_graph, batch.const_values,
@@ -154,19 +154,17 @@ def create_data_loader(dataset):
 
 def evaluate_model(network, test_dataloader, dataset, eval_iterations=None):
     iterable = itertools.islice(test_dataloader, eval_iterations) if eval_iterations else test_dataloader
-
-    metrics = MIPMetrics()  # TODO: Replace with generic MetricsHandler
+    metrics = MetricsHandler(MIPMetrics(), *dataset.test_metrics)
 
     for batched_data in iterable:
-        batch = MIPBatch(batched_data, torch.device(config.device))
+        batch_holder = MIPBatchHolder(batched_data, torch.device(config.device))
+        binary_assignments, decimal_assignments = network.forward(batch_holder.vars_const_graph,
+                                                                  batch_holder.const_values,
+                                                                  batch_holder.vars_obj_graph,
+                                                                  batch_holder.const_inst_graph)
 
-        binary_assignments, decimal_assignments = network.forward(batch.vars_const_graph, batch.const_values,
-                                                                  batch.vars_obj_graph, batch.const_inst_graph)
-        predictions = dataset.decode_model_outputs(binary_assignments[-1], decimal_assignments[-1])
-
-        # TODO: Create generic API for use with any dataset/metric
-        metrics.update(predictions, batch.vars_const_graph, batch.const_values, batch.const_inst_graph,
-                       batch.vars_obj_graph, batch.optimal_solution)
+        prediction = dataset.decode_model_outputs(binary_assignments[-1], decimal_assignments[-1])
+        metrics.update(prediction=prediction, batch_holder=batch_holder)
 
     return metrics.numpy_result
 

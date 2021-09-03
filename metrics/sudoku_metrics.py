@@ -1,17 +1,18 @@
 import torch
 
-from metrics.general_metrics import AverageMetrics, Metrics
+from metrics.general_metrics import AverageMetrics, StackableMetrics
+from utils.data import MIPBatchHolder
 
 
-# TODO: Make Metric holder, where several metrics can be stored together
-
-class SudokuMetrics(Metrics):
+class SudokuMetrics(StackableMetrics):
 
     def __init__(self) -> None:
         super().__init__()
         self._avg = AverageMetrics()
 
-    def update(self, prediction, givens, solution):
+    def update(self, prediction: torch.Tensor, batch_holder: MIPBatchHolder, **kwargs):
+        givens, solution = batch_holder.get_data("givens", "solution")
+
         self._avg.update(
             rows_acc=self._rows_accuracy(prediction),
             col_acc=self._columns_accuracy(prediction),

@@ -119,7 +119,7 @@ def batch_as_tensor(batch_data: Tuple[Tensor]):
     return torch.stack(batch_data, dim=0)
 
 
-class MIPBatch:
+class MIPBatchHolder:
 
     def __init__(self, batched_data: dict, device) -> None:
         self._batched_data = batched_data
@@ -155,3 +155,11 @@ class MIPBatch:
         """ Returns precomputed optimal value of objective function.
         """
         return self._batched_data['optimal_solution'].to(device=self._device)
+
+    def get_data(self, *keys: str):
+        """ Here you can get various task specific data, that is not directly related to MIP.
+        """
+        data = [self._batched_data[k] for k in keys]
+        data = [x.to(device=self._device) if isinstance(x, torch.Tensor) else x for x in data]
+
+        return data if len(data) > 1 else data[0]
