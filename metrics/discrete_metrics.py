@@ -8,11 +8,11 @@ class DiscretizationMetrics(StackableMetrics):
         super().__init__()
         self._avg = AverageMetrics()
 
-    def update(self, prediction: torch.Tensor, **kwargs) -> None:
+    def update(self, logits: torch.Tensor, **kwargs) -> None:
         self._avg.update(
-            discrete_vs_continuous=self._discrete_vs_continuous(prediction),
-            discrete_variables=self._count_discrete_variables(prediction),
-            max_diff_to_discrete=self._max_diff_to_discrete(prediction),
+            discrete_vs_continuous=self._discrete_vs_continuous(logits),
+            discrete_variables=self._count_discrete_variables(logits),
+            max_diff_to_discrete=self._max_diff_to_discrete(logits),
         )
 
     @property
@@ -23,22 +23,22 @@ class DiscretizationMetrics(StackableMetrics):
     def numpy_result(self):
         return self._avg.numpy_result
 
-    def _count_discrete_variables(self, prediction: torch.Tensor):
-        masked_vars = self._mask_discrete_variables(prediction)
+    def _count_discrete_variables(self, logits: torch.Tensor):
+        masked_vars = self._mask_discrete_variables(logits)
         return torch.sum(masked_vars)
 
-    def _discrete_vs_continuous(self, prediction: torch.Tensor):
-        masked_vars = self._mask_discrete_variables(prediction)
+    def _discrete_vs_continuous(self, logits: torch.Tensor):
+        masked_vars = self._mask_discrete_variables(logits)
         return torch.mean(masked_vars)
 
     @staticmethod
-    def _mask_discrete_variables(prediction: torch.Tensor):
-        values = torch.round(prediction) - prediction
+    def _mask_discrete_variables(logits: torch.Tensor):
+        values = torch.round(logits) - logits
         values = torch.abs(values)
         return torch.isclose(values, torch.zeros_like(values)).float()
 
     @staticmethod
-    def _max_diff_to_discrete(prediction: torch.Tensor):
-        values = torch.round(prediction) - prediction
+    def _max_diff_to_discrete(logits: torch.Tensor):
+        values = torch.round(logits) - logits
         values = torch.abs(values)
         return torch.max(values)

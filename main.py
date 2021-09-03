@@ -123,7 +123,7 @@ def train(train_steps, experiment, network, optimizer, train_dataloader, dataset
 
         prediction = dataset.decode_model_outputs(binary_assignments[-1], decimal_assignments[-1])
         loss_avg.update(loss=loss, loss_opt=total_loss_o, loss_const=total_loss_c)
-        metrics.update(prediction=prediction, batch_holder=batch_holder)
+        metrics.update(prediction=prediction, batch_holder=batch_holder, logits=binary_assignments[-1])
 
         loss.backward()
         optimizer.step()

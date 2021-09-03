@@ -12,7 +12,7 @@ def format_metrics(mode: str, step: int, metrics: dict, max_line_len=120):
         else:
             raise NotImplementedError(f"Formatting for {type(value)} type not implemented!")
 
-    line_start = f"[step={step}] [mode={mode}]"
+    line_start = f"[step={step}] [{mode}]"
     formatted_output = [line_start]
 
     for m in formatted_metrics:
