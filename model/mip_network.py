@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 
 from model.normalization import PairNorm
+from utils.data import MIPBatchHolder
 
 
 class MIPNetwork(torch.nn.Module):
@@ -49,35 +50,31 @@ class MIPNetwork(torch.nn.Module):
         self.noise = torch.distributions.Normal(0, 1)
 
         self.step = 0
-        self.powers_of_two = torch.as_tensor([2 ** k for k in range(0, output_bits)], dtype=torch.float32, device=torch.device('cuda:0'))
+        self.powers_of_two = torch.as_tensor([2 ** k for k in range(0, output_bits)], dtype=torch.float32,
+                                             device=torch.device('cuda:0'))
 
-    def forward(self, adj_matrix: torch.sparse.Tensor, conditions_values: torch.Tensor,
-                vars_obj_graph: torch.sparse.Tensor, const_inst_graph: torch.sparse.Tensor):
-        """
-        :param adj_matrix: Adjacency matrix of MIP factor graph with size [var_count x constraint_count]
-        :return: variable assignments with the size [var_count]
-        """
-        var_count, const_count = adj_matrix.size()
-        _, objective_count = vars_obj_graph.size()
+    def forward(self, batch_holder: MIPBatchHolder, device):
+        var_count, const_count = batch_holder.vars_const_graph.size()
+        _, objective_count = batch_holder.vars_inst_graph.size()
 
-        variables = torch.ones([var_count, self.feature_maps], device=torch.device('cuda:0'))
-        constraints = self.prepare_cond(torch.unsqueeze(conditions_values, dim=-1))
-        objectives = torch.ones([objective_count, self.feature_maps], device=torch.device('cuda:0'))
+        variables = torch.ones([var_count, self.feature_maps], device=device)
+        constraints = self.prepare_cond(torch.unsqueeze(batch_holder.const_values, dim=-1))
+        objectives = torch.ones([objective_count, self.feature_maps], device=device)
 
         binary_outputs = []
         decimal_outputs = []
 
         for i in range(self.pass_steps):
-            var2obj_msg = torch.sparse.mm(vars_obj_graph.t(), variables)
+            var2obj_msg = torch.sparse.mm(batch_holder.vars_obj_graph.t(), variables)
             var2obj_msg = torch.cat([objectives, var2obj_msg], dim=-1)
             objectives = self.objective_update(var2obj_msg)
 
-            var2const_msg = torch.sparse.mm(adj_matrix.t(), variables)
+            var2const_msg = torch.sparse.mm(batch_holder.vars_const_graph.t(), variables)
             const_msg = torch.cat([constraints, var2const_msg], dim=-1)
             constraints = self.constraint_update(const_msg)
 
-            const2var_msg = torch.sparse.mm(adj_matrix, constraints)
-            obj2var_msg = torch.sparse.mm(vars_obj_graph, objectives)
+            const2var_msg = torch.sparse.mm(batch_holder.vars_const_graph, constraints)
+            obj2var_msg = torch.sparse.mm(batch_holder.vars_obj_graph, objectives)
             var_msg = torch.cat([variables, const2var_msg, obj2var_msg], dim=-1)
             variables = self.variable_update(var_msg)
 

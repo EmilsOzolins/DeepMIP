@@ -87,21 +87,18 @@ def main():
 
 
 def train(train_steps, experiment, network, optimizer, train_dataloader, dataset):
-    loss_avg = AverageMetrics()
+    loss_avg = AverageMetrics()  # TODO: Think what to do with this. LossMetrics???
     metrics = MetricsHandler(DiscretizationMetrics(), *dataset.train_metrics)
+    device = torch.device(config.device)
 
     start = time.time()
     for batched_data in itertools.islice(train_dataloader, train_steps):
-        batch_holder = MIPBatchHolder(batched_data, torch.device(config.device))
+        batch_holder = MIPBatchHolder(batched_data, device)
 
         optimizer.zero_grad()
+        binary_assignments, decimal_assignments = network.forward(batch_holder, device)
 
-        # TODO: Pass batch_holder to the model
-        binary_assignments, decimal_assignments = network.forward(batch_holder.vars_const_graph,
-                                                                  batch_holder.const_values,
-                                                                  batch_holder.vars_obj_graph,
-                                                                  batch_holder.const_inst_graph)
-
+        # TODO: Deal with this loss garbage
         loss = 0
         total_loss_o = 0
         total_loss_c = 0
@@ -161,13 +158,12 @@ def create_data_loader(dataset):
 def evaluate_model(network, test_dataloader, dataset, eval_iterations=None):
     iterable = itertools.islice(test_dataloader, eval_iterations) if eval_iterations else test_dataloader
     metrics = MetricsHandler(MIPMetrics(), *dataset.test_metrics)
+    device = torch.device(config.device)
 
     for batched_data in iterable:
-        batch_holder = MIPBatchHolder(batched_data, torch.device(config.device))
-        binary_assignments, decimal_assignments = network.forward(batch_holder.vars_const_graph,
-                                                                  batch_holder.const_values,
-                                                                  batch_holder.vars_obj_graph,
-                                                                  batch_holder.const_inst_graph)
+        batch_holder = MIPBatchHolder(batched_data, device)
+
+        binary_assignments, decimal_assignments = network.forward(batch_holder, device)
 
         prediction = dataset.decode_model_outputs(binary_assignments[-1], decimal_assignments[-1])
         metrics.update(prediction=prediction, batch_holder=batch_holder)
