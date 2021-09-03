@@ -166,7 +166,7 @@ def evaluate_model(network, test_dataloader, dataset, eval_iterations=None):
         dataset.evaluate_model_outputs(binary_assignments[-1], decimal_assignments[-1], batched_data)
 
         predictions = dataset.decode_model_outputs(binary_assignments[-1], decimal_assignments[-1])
-        metrics.update(predictions, batch.vars_const_graph, batch.const_values, batch.const_inst_graph)
+        metrics.update(predictions, batch.vars_const_graph, batch.const_values, batch.const_inst_graph, batch.vars_obj_graph, batch.optimal_solution)
 
     return {**dataset.get_metrics(), **metrics.numpy_result}
 

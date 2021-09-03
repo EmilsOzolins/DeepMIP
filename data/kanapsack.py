@@ -42,7 +42,7 @@ class BoundedKnapsackDataset(MIPDataset, IterableDataset):
 
                 solution = self.get_optimal_value(weights, values, [capacity])
                 yield {"mip": self.convert_to_mip(var_indices, weights, values, copies, capacity),
-                       "computed_value": torch.as_tensor([solution])}
+                       "optimal_solution": torch.as_tensor([solution], dtype=torch.float32)}
 
         return generator()
 
@@ -76,6 +76,7 @@ class BoundedKnapsackDataset(MIPDataset, IterableDataset):
         self._average_metrics = AverageMetrics()
 
     def evaluate_model_outputs(self, binary_assignment, decimal_assignment, batched_data):
+        return
         # TODO: These are MIP metrics, move to mip_metrics
         model_output = self.decode_model_outputs(binary_assignment, decimal_assignment)
 

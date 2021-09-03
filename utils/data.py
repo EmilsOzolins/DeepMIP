@@ -27,7 +27,7 @@ def batch_data(batch: List[Dict]):
             continue
 
         if isinstance(data[0], int):
-            output_batch[key] = data
+            output_batch[key] = torch.as_tensor(data)
             continue
 
         raise NotImplementedError(f"Batching for {type(data[0])} is not implemented!")
@@ -149,3 +149,9 @@ class MIPBatch:
     def vars_inst_graph(self):
         indices, values, size = self._batched_data["mip"]["vars_per_graph"]
         return torch.sparse_coo_tensor(indices, values, size=size, device=self._device).coalesce()
+
+    @cached_property
+    def optimal_solution(self):
+        """ Returns precomputed optimal value of objective function.
+        """
+        return self._batched_data['optimal_solution'].to(device=self._device)
