@@ -10,8 +10,8 @@ from torch.utils.data import DataLoader, IterableDataset
 import config
 import hyperparams as params
 from data.kanapsack import BinaryKnapsackDataset
-from metrics.general_metrics import AverageMetrics, MetricsHandler
 from metrics.discrete_metrics import DiscretizationMetrics
+from metrics.general_metrics import AverageMetrics, MetricsHandler
 from metrics.mip_metrics import MIPMetrics
 from model.mip_network import MIPNetwork
 from utils.data import batch_data, MIPBatchHolder
@@ -57,7 +57,8 @@ def main():
         with experiment.train():
             network.train()
             torch.enable_grad()
-            loss_res, elapsed_time, disc_metric = train(train_steps, experiment, network, optimizer, train_dataloader)
+            loss_res, elapsed_time, disc_metric = train(train_steps, experiment, network,
+                                                        optimizer, train_dataloader, train_dataset)
             current_step += train_steps
             print(format_metrics(current_step, {**disc_metric, **loss_res, "elapsed_time": elapsed_time}))
             experiment.log_metrics({**disc_metric, **loss_res, "elapsed_time": elapsed_time})
@@ -85,28 +86,32 @@ def main():
         experiment.log_metrics(results)
 
 
-def train(train_steps, experiment, network, optimizer, train_dataloader):
-    start = time.time()
+def train(train_steps, experiment, network, optimizer, train_dataloader, dataset):
     loss_avg = AverageMetrics()
-    disc_metric = DiscretizationMetrics()
+    metrics = MetricsHandler(DiscretizationMetrics(), *dataset.train_metrics)
 
+    start = time.time()
     for batched_data in itertools.islice(train_dataloader, train_steps):
-        batch = MIPBatchHolder(batched_data, torch.device(config.device))
+        batch_holder = MIPBatchHolder(batched_data, torch.device(config.device))
 
         optimizer.zero_grad()
-        binary_assignments, decimal_assignments = network.forward(batch.vars_const_graph, batch.const_values,
-                                                                  batch.vars_obj_graph, batch.const_inst_graph)
+
+        # TODO: Pass batch_holder to the model
+        binary_assignments, decimal_assignments = network.forward(batch_holder.vars_const_graph,
+                                                                  batch_holder.const_values,
+                                                                  batch_holder.vars_obj_graph,
+                                                                  batch_holder.const_inst_graph)
 
         loss = 0
         total_loss_o = 0
         total_loss_c = 0
         for asn in decimal_assignments:
-            left_side = torch.sparse.mm(batch.vars_const_graph.t(), asn)
-            loss_c = torch.relu(left_side - torch.unsqueeze(batch.const_values, dim=-1))
+            left_side = torch.sparse.mm(batch_holder.vars_const_graph.t(), asn)
+            loss_c = torch.relu(left_side - torch.unsqueeze(batch_holder.const_values, dim=-1))
             # loss_c = torch.square(loss_c)
-            loss_c = torch.sparse.mm(batch.const_inst_graph.t(), loss_c)
+            loss_c = torch.sparse.mm(batch_holder.const_inst_graph.t(), loss_c)
 
-            loss_o = torch.sparse.mm(batch.vars_obj_graph.t(), asn)
+            loss_o = torch.sparse.mm(batch_holder.vars_obj_graph.t(), asn)
 
             total_loss_c += torch.mean(loss_c)
             total_loss_o += torch.mean(loss_o)  # Calculate mean over graphs
@@ -119,8 +124,9 @@ def train(train_steps, experiment, network, optimizer, train_dataloader):
         total_loss_c /= steps_taken
         loss /= steps_taken
 
+        prediction = dataset.decode_model_outputs(binary_assignments[-1], decimal_assignments[-1])
         loss_avg.update(loss=loss, loss_opt=total_loss_o, loss_const=total_loss_c)
-        disc_metric.update(torch.squeeze(decimal_assignments[-1]))
+        metrics.update(prediction=prediction, batch_holder=batch_holder)
 
         loss.backward()
         optimizer.step()
@@ -129,7 +135,7 @@ def train(train_steps, experiment, network, optimizer, train_dataloader):
         experiment.log_metric("loss_opt", total_loss_o)
         experiment.log_metric("loss_const", total_loss_c)
 
-    return loss_avg.numpy_result, time.time() - start, disc_metric.numpy_result
+    return loss_avg.numpy_result, time.time() - start, metrics.numpy_result
 
 
 def create_data_loader(dataset):

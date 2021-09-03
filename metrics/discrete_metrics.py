@@ -1,6 +1,6 @@
 import torch
 
-from metrics.general_metrics import AverageMetrics, Metrics, StackableMetrics
+from metrics.general_metrics import AverageMetrics, StackableMetrics
 
 
 class DiscretizationMetrics(StackableMetrics):
