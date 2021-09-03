@@ -6,6 +6,7 @@ import torch
 class IPInstance:
     """
     Builds Integer Programming instance from individual constraints.
+    This is abstraction over lowe-level formulation to make formulating arbitrary problems as MIP easy.
     """
 
     def __init__(self, variable_count=None) -> None:

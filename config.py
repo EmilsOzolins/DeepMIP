@@ -5,4 +5,4 @@ model_dir = '/host-dir/mip_models'
 device = 'cuda:0'
 
 # Without setting to true, debuging will not work
-debugging_enabled = False
+debugging_enabled = True
