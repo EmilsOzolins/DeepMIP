@@ -60,7 +60,7 @@ def main():
             loss_res, elapsed_time, disc_metric = train(train_steps, experiment, network,
                                                         optimizer, train_dataloader, train_dataset)
             current_step += train_steps
-            print(format_metrics(current_step, {**disc_metric, **loss_res, "elapsed_time": elapsed_time}))
+            print(format_metrics("train", current_step, {**disc_metric, **loss_res, "elapsed_time": elapsed_time}))
             experiment.log_metrics({**disc_metric, **loss_res, "elapsed_time": elapsed_time})
 
         # TODO: Implement saving to checkpoint - model, optimizer and steps
@@ -71,7 +71,7 @@ def main():
             torch.no_grad()
             results = evaluate_model(network, validation_dataloader, val_dataset, eval_iterations=100)
 
-            print(format_metrics(current_step, results))
+            print(format_metrics("val", current_step, results))
             experiment.log_metrics(results)
 
     with experiment.test():
@@ -82,7 +82,7 @@ def main():
         results = evaluate_model(network, test_dataloader, test_dataset, eval_iterations=100)
 
         print("\n\n\n------------------ TESTING ------------------\n")
-        print(format_metrics(params.train_steps, results))
+        print(format_metrics("test", params.train_steps, results))
         experiment.log_metrics(results)
 
 

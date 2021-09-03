@@ -1,7 +1,7 @@
 import numpy as np
 
 
-def format_metrics(step: int, metrics: dict, max_line_len=120):
+def format_metrics(mode: str, step: int, metrics: dict, max_line_len=120):
     formatted_metrics = []
 
     for key, value in metrics.items():
@@ -12,7 +12,7 @@ def format_metrics(step: int, metrics: dict, max_line_len=120):
         else:
             raise NotImplementedError(f"Formatting for {type(value)} type not implemented!")
 
-    line_start = f"[step={step}]"
+    line_start = f"[step={step}] [mode={mode}]"
     formatted_output = [line_start]
 
     for m in formatted_metrics:
