@@ -11,7 +11,7 @@ class SudokuMetrics(StackableMetrics):
         self._avg = AverageMetrics()
 
     def update(self, prediction: torch.Tensor, batch_holder: MIPBatchHolder, **kwargs):
-        givens, solution = batch_holder.get_data("givens", "solution")
+        givens, solution = batch_holder.get_data("givens", "labels")
 
         self._avg.update(
             rows_acc=self._rows_accuracy(prediction),

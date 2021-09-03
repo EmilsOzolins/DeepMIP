@@ -9,6 +9,7 @@ from torch.utils.data import IterableDataset
 from data.datasets_base import MIPDataset
 from data.ip_instance import IPInstance
 from metrics.general_metrics import Metrics
+from metrics.mip_metrics import MIPMetrics
 
 
 class BoundedKnapsackDataset(MIPDataset, IterableDataset):
@@ -72,7 +73,7 @@ class BoundedKnapsackDataset(MIPDataset, IterableDataset):
 
     @property
     def test_metrics(self) -> List[Metrics]:
-        return []
+        return [MIPMetrics()]
 
     @property
     def train_metrics(self) -> List[Metrics]:

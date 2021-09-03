@@ -119,7 +119,7 @@ class BinarySudokuDataset(IPSudokuDataset):
 
     def decode_model_outputs(self, binary_assignment, decimal_assignment):
         assignment = binary_assignment
-        assignment = torch.round(assignment)  # TODO: I should round binary representation
+        assignment = torch.round(assignment)
         assignment = torch.reshape(assignment, [params.batch_size, 9, 9, 9])
         return torch.argmax(assignment, dim=-1) + 1
 
@@ -205,8 +205,7 @@ class IntegerSudokuDataset(IPSudokuDataset):
         return 4
 
     def decode_model_outputs(self, binary_assignment, decimal_assignment):
-        powers = torch.tensor([2 ** k for k in range(self.required_output_bits)], dtype=torch.float32,
-                              device=binary_assignment.device)
+        powers = torch.tensor([2 ** k for k in range(self.required_output_bits)], dtype=torch.float32, device=binary_assignment.device)
         assignment = torch.reshape(binary_assignment, [params.batch_size, 9, 9, self.required_output_bits])
         assignment = torch.round(assignment)
         return torch.sum(assignment * powers, dim=-1)

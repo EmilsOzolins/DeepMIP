@@ -9,10 +9,9 @@ from torch.utils.data import DataLoader, IterableDataset
 
 import config
 import hyperparams as params
-from data.kanapsack import BinaryKnapsackDataset
+from data.sudoku import BinarySudokuDataset
 from metrics.discrete_metrics import DiscretizationMetrics
 from metrics.general_metrics import AverageMetrics, MetricsHandler
-from metrics.mip_metrics import MIPMetrics
 from model.mip_network import MIPNetwork
 from utils.data import batch_data, MIPBatchHolder
 from utils.visualize import format_metrics
@@ -28,17 +27,17 @@ def main():
     sudoku_train_data = "binary/sudoku_train.csv"
     sudoku_val_data = "binary/sudoku_validate.csv"
 
-    # test_dataset = BinarySudokuDataset(sudoku_test_data)
-    # train_dataset = BinarySudokuDataset(sudoku_train_data)
-    # val_dataset = BinarySudokuDataset(sudoku_val_data)
+    test_dataset = BinarySudokuDataset(sudoku_test_data)
+    train_dataset = BinarySudokuDataset(sudoku_train_data)
+    val_dataset = BinarySudokuDataset(sudoku_val_data)
 
     # test_dataset = IntegerSudokuDataset(sudoku_test_data)
     # train_dataset = IntegerSudokuDataset(sudoku_train_data)
     # val_dataset = IntegerSudokuDataset(sudoku_val_data)
 
-    test_dataset = BinaryKnapsackDataset(2, 20)
-    train_dataset = BinaryKnapsackDataset(2, 20)
-    val_dataset = BinaryKnapsackDataset(2, 20)
+    # test_dataset = BinaryKnapsackDataset(2, 20)
+    # train_dataset = BinaryKnapsackDataset(2, 20)
+    # val_dataset = BinaryKnapsackDataset(2, 20)
 
     train_dataloader = create_data_loader(train_dataset)
     validation_dataloader = create_data_loader(val_dataset)
@@ -157,7 +156,7 @@ def create_data_loader(dataset):
 
 def evaluate_model(network, test_dataloader, dataset, eval_iterations=None):
     iterable = itertools.islice(test_dataloader, eval_iterations) if eval_iterations else test_dataloader
-    metrics = MetricsHandler(MIPMetrics(), *dataset.test_metrics)
+    metrics = MetricsHandler(*dataset.test_metrics)
     device = torch.device(config.device)
 
     for batched_data in iterable:
