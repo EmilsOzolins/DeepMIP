@@ -95,13 +95,13 @@ def train(train_steps, experiment, network, optimizer, train_dataloader, dataset
         batch_holder = MIPBatchHolder(batched_data, device)
 
         optimizer.zero_grad(set_to_none=True)
-        binary_assignments, decimal_assignments = network.forward(batch_holder, device)
+        outputs = network.forward(batch_holder, device)
 
         # TODO: Deal with this loss garbage
         loss = 0
         total_loss_o = 0
         total_loss_c = 0
-        for asn in decimal_assignments:
+        for asn in outputs:
             left_side = torch.sparse.mm(batch_holder.vars_const_graph.t(), asn)
             loss_c = torch.relu(left_side - torch.unsqueeze(batch_holder.const_values, dim=-1))
             # loss_c = torch.square(loss_c)
@@ -114,15 +114,15 @@ def train(train_steps, experiment, network, optimizer, train_dataloader, dataset
 
             loss += torch.mean(loss_c + loss_o * 0.3)
 
-        steps_taken = len(decimal_assignments)
+        steps_taken = len(outputs)
 
         total_loss_o /= steps_taken
         total_loss_c /= steps_taken
         loss /= steps_taken
 
-        prediction = dataset.decode_model_outputs(binary_assignments[-1], decimal_assignments[-1])
+        prediction = dataset.decode_model_outputs(outputs[-1])
         loss_avg.update(loss=loss, loss_opt=total_loss_o, loss_const=total_loss_c)
-        metrics.update(prediction=prediction, batch_holder=batch_holder, logits=binary_assignments[-1])
+        metrics.update(prediction=prediction, batch_holder=batch_holder, logits=outputs[-1])
 
         loss.backward()
         optimizer.step()
