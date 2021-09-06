@@ -7,7 +7,7 @@ from ortools.algorithms import pywrapknapsack_solver
 from torch.utils.data import IterableDataset
 
 from data.datasets_base import MIPDataset
-from data.ip_instance import IPInstance
+from data.mip_instance import MIPInstance
 from metrics.general_metrics import Metrics
 from metrics.mip_metrics import MIPMetrics
 
@@ -51,15 +51,16 @@ class BoundedKnapsackDataset(MIPDataset, IterableDataset):
         pass
 
     def convert_to_mip(self, var_indices, weights, values, copies, capacity):
-        ip = IPInstance(len(var_indices))
+        ip = MIPInstance(len(var_indices))
 
         # Each element is available c times
         for ind, c in zip(var_indices, copies):
-            ip.less_or_equal([ind], [1], c)
+            ip = ip.less_or_equal([ind], [1], c)
 
         # Weight less or equal with the knapsack capacity
-        ip.less_or_equal(var_indices, weights, capacity)
-        ip.maximize_objective(var_indices, values)
+        ip = ip.less_or_equal(var_indices, weights, capacity)
+        ip = ip.integer_constraint(var_indices)
+        ip = ip.maximize_objective(var_indices, values)
 
         return ip
 
@@ -97,10 +98,11 @@ class BinaryKnapsackDataset(BoundedKnapsackDataset):
         return solver.Solve()
 
     def convert_to_mip(self, var_indices, weights, values, copies, capacity):
-        ip = IPInstance(len(var_indices))
+        ip = MIPInstance(len(var_indices))
 
-        ip.less_or_equal(var_indices, weights, capacity)
-        ip.maximize_objective(var_indices, values)
+        ip = ip.less_or_equal(var_indices, weights, capacity)
+        ip = ip.maximize_objective(var_indices, values)
+        ip = ip.integer_constraint(var_indices)
 
         return ip
 

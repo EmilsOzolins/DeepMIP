@@ -7,7 +7,7 @@ from torch.utils.data.dataset import Dataset
 
 import hyperparams as params
 from data.datasets_base import MIPDataset
-from data.ip_instance import IPInstance
+from data.mip_instance import MIPInstance
 from metrics.general_metrics import Metrics
 from metrics.sudoku_metrics import SudokuMetrics
 
@@ -64,7 +64,7 @@ class IPSudokuDataset(MIPDataset, Dataset, ABC):
 class BinarySudokuDataset(IPSudokuDataset):
 
     def prepare_mip(self, data):
-        ip_inst = IPInstance(variable_count=9 ** 3)
+        ip_inst = MIPInstance(variable_count=9 ** 3)
 
         # Only one variable should be set to 1 along the k-dimension
         for i in range(9):
@@ -75,6 +75,7 @@ class BinarySudokuDataset(IPSudokuDataset):
                     variables = [self._calc_index(i, j, k) for k in range(9) if k != value - 1]
                     multipliers = [1] * len(variables)
                     ip_inst = ip_inst.equal(variables, multipliers, 0)
+                    ip_inst = ip_inst.integer_constraint(variables)
                 else:  # Only one element should be set to 1
                     variables = [self._calc_index(i, j, k) for k in range(9)]
                     multipliers = [1] * len(variables)
@@ -86,6 +87,7 @@ class BinarySudokuDataset(IPSudokuDataset):
                 variables = [self._calc_index(i, j, k) for i in range(9)]
                 multipliers = [1] * len(variables)
                 ip_inst = ip_inst.equal(variables, multipliers, 1)
+                ip_inst = ip_inst.integer_constraint(variables)
 
         # All elements in single row should be different
         for i in range(9):
@@ -93,6 +95,7 @@ class BinarySudokuDataset(IPSudokuDataset):
                 variables = [self._calc_index(i, j, k) for j in range(9)]
                 multipliers = [1] * len(variables)
                 ip_inst = ip_inst.equal(variables, multipliers, 1)
+                ip_inst = ip_inst.integer_constraint(variables)
 
         # All elements in each 3x3 sub-square should be different
         for p in range(3):
@@ -104,6 +107,7 @@ class BinarySudokuDataset(IPSudokuDataset):
                                  ]
                     multipliers = [1] * len(variables)
                     ip_inst = ip_inst.equal(variables, multipliers, 1)
+                    ip_inst = ip_inst.integer_constraint(variables)
 
         return ip_inst
 
@@ -127,7 +131,7 @@ class BinarySudokuDataset(IPSudokuDataset):
 class IntegerSudokuDataset(IPSudokuDataset):
 
     def prepare_mip(self, data):
-        ip_inst = IPInstance(variable_count=9 ** 2)
+        ip_inst = MIPInstance(variable_count=9 ** 2)
 
         # Elements should be in the range 1-9 and given values should be set
         for x in range(9):
@@ -197,6 +201,8 @@ class IntegerSudokuDataset(IPSudokuDataset):
                             ip_inst.less_or_equal([index_1, index_2, s1], [1, -1, big_m], -1 + big_m)
                             ip_inst.less_or_equal([index_2, index_1, s2], [1, -1, big_m], -1 + big_m)
                             ip_inst.equal([s1, s2], [1, 1], 1)
+
+        ip_inst.integer_constraint([x for x in range(next_free_var)])
 
         return ip_inst
 

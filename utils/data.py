@@ -1,11 +1,11 @@
 from collections import defaultdict
-from functools import cached_property
+from functools import cached_property, lru_cache
 from typing import Tuple, List, Dict
 
 import torch
 from torch import Tensor
 
-from data.ip_instance import IPInstance
+from data.mip_instance import MIPInstance
 
 
 def batch_data(batch: List[Dict]):
@@ -18,7 +18,7 @@ def batch_data(batch: List[Dict]):
 
     output_batch = dict()
     for key, data in batch_data.items():
-        if isinstance(data[0], IPInstance):
+        if isinstance(data[0], MIPInstance):
             output_batch[key] = batch_as_mip(data)
             continue
 
@@ -35,7 +35,7 @@ def batch_data(batch: List[Dict]):
     return output_batch
 
 
-def batch_as_mip(mip_instances: Tuple[IPInstance]) -> Dict[str, Tuple]:
+def batch_as_mip(mip_instances: Tuple[MIPInstance]) -> Dict[str, Tuple]:
     """ Batches mip instances as one huge sparse graph.
     Graphs should be converted to sparse tensor after data is collected by workers.
     """
@@ -54,6 +54,8 @@ def batch_as_mip(mip_instances: Tuple[IPInstance]) -> Dict[str, Tuple]:
 
     variables_edge_indices = []  # Variables-instances adjacency matrix (servers as helper)
     variables_edge_values = []
+
+    integer_variables = []
 
     for graph_id, mip in enumerate(mip_instances):
         ind = mip.variables_constraints_graph
@@ -88,6 +90,10 @@ def batch_as_mip(mip_instances: Tuple[IPInstance]) -> Dict[str, Tuple]:
         variables_edge_indices.append(var_ind)
         variables_edge_values.append(mip.variables_instance_graph_values)
 
+        int_vars = mip.integer_variables
+        int_vars += var_offset
+        integer_variables.append(int_vars)
+
         var_offset += mip.next_variable_index
         const_offset += mip.next_constraint_index
 
@@ -109,10 +115,13 @@ def batch_as_mip(mip_instances: Tuple[IPInstance]) -> Dict[str, Tuple]:
     variables_edge_values = torch.cat(variables_edge_values, dim=-1)
     vars_per_graph = variables_edge_indices, variables_edge_values, [size[0], batch_size]
 
+    integer_variables = torch.cat(integer_variables, dim=-1)
+
     return {"constraints": constraints,
             "objective": objective,
             "consts_per_graph": consts_per_graph,
-            "vars_per_graph": vars_per_graph}
+            "vars_per_graph": vars_per_graph,
+            "integer_variables": integer_variables}
 
 
 def batch_as_tensor(batch_data: Tuple[Tensor]):
@@ -156,6 +165,15 @@ class MIPBatchHolder:
         """
         return self._batched_data['optimal_solution'].to(device=self._device)
 
+    @cached_property
+    def integer_mask(self):
+        """ Returns mask over integer variables where 1 if variable should be integer and 0 for others. """
+        *_, size = self._batched_data["mip"]["vars_per_graph"]
+        mask = torch.zeros([size[0]], device=self._device)
+        indices = self._batched_data["mip"]["integer_variables"].to(device=self._device)
+        return torch.scatter(mask, dim=0, index=indices, value=1.0)
+
+    @lru_cache(maxsize=None)
     def get_data(self, *keys: str):
         """ Here you can get various task specific data, that is not directly related to MIP.
         """

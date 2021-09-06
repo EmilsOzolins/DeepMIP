@@ -3,7 +3,7 @@ from typing import List
 import torch
 
 
-class IPInstance:
+class MIPInstance:
     """
     Builds Integer Programming instance from individual constraints.
     This is abstraction over lowe-level formulation to make formulating arbitrary problems as MIP easy.
@@ -16,15 +16,16 @@ class IPInstance:
         self._current_constraint_index = 0
         self._max_var_index = variable_count - 1 if variable_count else 0
 
-        self._objective_indices = []
         self._objective_multipliers = []
-
+        self._objective_indices = []
         self._objective_set = False
+
+        self._integer_indices = set()
 
     def greater_or_equal(self, variable_indices: List[int],
                          variable_multipliers: List[float],
                          right_side_value: float
-                         ) -> 'IPInstance':
+                         ) -> 'MIPInstance':
         """
         Adds greater or equal constraint to the instance.
         Accepts constraint in the form a_0 * x_0 + a_1 * x_1 + ... + a_i * x_i >= b , where:
@@ -42,7 +43,7 @@ class IPInstance:
     def less_or_equal(self, variable_indices: List[int],
                       variable_multipliers: List[float],
                       right_side_value: float
-                      ) -> 'IPInstance':
+                      ) -> 'MIPInstance':
         """
         Adds less or equal constraint to the instance.
         Accepts constraint in the form a_0 * x_0 + a_1 * x_1 + ... + a_i * x_i <= b , where:
@@ -66,7 +67,7 @@ class IPInstance:
     def equal(self, variable_indices: List[int],
               variable_multipliers: List[float],
               right_side_value: float
-              ) -> 'IPInstance':
+              ) -> 'MIPInstance':
         """
         Adds equal constraint to the instance.
         Accepts constraint in the form a_0 * x_0 + a_1 * x_1 + ... + a_i * x_i = b , where:
@@ -88,16 +89,24 @@ class IPInstance:
         self._objective_set = True
         self._objective_indices += variable_indices
         self._objective_multipliers += variable_multipliers
+        return self
 
     def maximize_objective(self, variable_indices: List[int], variable_multipliers: List[float]):
         variable_multipliers = [-x for x in variable_multipliers]
         self.minimize_objective(variable_indices, variable_multipliers)
+        return self
 
     def less(self):
         raise NotImplementedError()
 
     def greater(self):
         raise NotImplementedError()
+
+    def integer_constraint(self, variable_indices: List[int]):
+        """ Variables with this constraint will be integers. Rest of the variables will be floats.
+        """
+        self._integer_indices.update(variable_indices)
+        return self
 
     @property
     def variables_constraints_graph(self):
@@ -157,3 +166,7 @@ class IPInstance:
     @property
     def variables_instance_graph_values(self):
         return torch.as_tensor([1] * self.next_variable_index, dtype=torch.float32)
+
+    @property
+    def integer_variables(self):
+        return torch.as_tensor(list(self._integer_indices), dtype=torch.int64)

@@ -61,7 +61,11 @@ class MIPNetwork(torch.nn.Module):
         binary_outputs = []
         decimal_outputs = []
 
-        obj_multipliers = torch.sparse.sum(batch_holder.vars_obj_graph, dim=-1).to_dense()
+        vars_obj_graph = batch_holder.vars_obj_graph
+        if vars_obj_graph._nnz() == 0:
+            obj_multipliers = torch.zeros([var_count], device=device)
+        else:
+            obj_multipliers = torch.sparse.sum(vars_obj_graph, dim=-1).to_dense()
         obj_multipliers = torch.unsqueeze(obj_multipliers, dim=-1)
 
         const_values = torch.unsqueeze(batch_holder.const_values, dim=-1)
@@ -82,7 +86,11 @@ class MIPNetwork(torch.nn.Module):
             variables = self.variable_update(var_msg)
 
             out_vars = self.output(variables)
-            out = torch.sigmoid(out_vars + self.noise.sample(out_vars.size()).cuda())
+            int_noise = self.noise.sample(out_vars.size()).cuda()
+            # Noise is not applied to variables that doesn't have integer constraint
+            masked_int_noise = int_noise * torch.unsqueeze(batch_holder.integer_mask, dim=-1)
+
+            out = torch.sigmoid(out_vars + masked_int_noise)
 
             binary_outputs.append(out)
 
