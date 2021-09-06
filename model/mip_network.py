@@ -58,8 +58,7 @@ class MIPNetwork(torch.nn.Module):
         variables = torch.ones([var_count, self.feature_maps], device=device)
         constraints = torch.ones([const_count, self.feature_maps], device=device)
 
-        binary_outputs = []
-        decimal_outputs = []
+        outputs = []
 
         vars_obj_graph = batch_holder.vars_obj_graph
         if vars_obj_graph._nnz() == 0:
@@ -91,13 +90,9 @@ class MIPNetwork(torch.nn.Module):
             masked_int_noise = int_noise * torch.unsqueeze(batch_holder.integer_mask, dim=-1)
 
             out = torch.sigmoid(out_vars + masked_int_noise)
-
-            binary_outputs.append(out)
-
-            decimal_pred = torch.sum(self.powers_of_two * out, dim=-1, keepdim=True)  # TODO: Get rid of this
-            decimal_outputs.append(decimal_pred)
+            outputs.append(out)
 
             constraints = constraints.detach() * 0.2 + constraints * 0.8
             variables = variables.detach() * 0.2 + variables * 0.8
 
-        return binary_outputs, decimal_outputs
+        return outputs

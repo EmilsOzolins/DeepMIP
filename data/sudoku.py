@@ -49,7 +49,7 @@ class IPSudokuDataset(MIPDataset, Dataset, ABC):
         pass
 
     @abstractmethod
-    def decode_model_outputs(self, binary_assignment, decimal_assignment):
+    def decode_model_outputs(self, model_output):
         pass
 
     @property
@@ -121,9 +121,8 @@ class BinarySudokuDataset(IPSudokuDataset):
     def required_output_bits(self):
         return 1
 
-    def decode_model_outputs(self, binary_assignment, decimal_assignment):
-        assignment = binary_assignment
-        assignment = torch.round(assignment)
+    def decode_model_outputs(self, model_output):
+        assignment = torch.round(model_output)
         assignment = torch.reshape(assignment, [params.batch_size, 9, 9, 9])
         return torch.argmax(assignment, dim=-1) + 1
 
@@ -210,9 +209,9 @@ class IntegerSudokuDataset(IPSudokuDataset):
     def required_output_bits(self):
         return 4
 
-    def decode_model_outputs(self, binary_assignment, decimal_assignment):
-        powers = torch.tensor([2 ** k for k in range(self.required_output_bits)], dtype=torch.float32, device=binary_assignment.device)
-        assignment = torch.reshape(binary_assignment, [params.batch_size, 9, 9, self.required_output_bits])
+    def decode_model_outputs(self, model_output):
+        powers = torch.tensor([2 ** k for k in range(self.required_output_bits)], dtype=torch.float32, device=model_output.device)
+        assignment = torch.reshape(model_output, [params.batch_size, 9, 9, self.required_output_bits])
         assignment = torch.round(assignment)
         return torch.sum(assignment * powers, dim=-1)
 

@@ -69,7 +69,7 @@ class BoundedKnapsackDataset(MIPDataset, IterableDataset):
         return self._max_copies.bit_length()
 
     @abstractmethod
-    def decode_model_outputs(self, binary_assignment, decimal_assignment):
+    def decode_model_outputs(self, model_output):
         pass
 
     @property
@@ -86,8 +86,8 @@ class BinaryKnapsackDataset(BoundedKnapsackDataset):
     def __init__(self, min_variables, max_variables, max_weight=20, max_values=20) -> None:
         super().__init__(min_variables, max_variables, max_copies=1, max_weight=max_weight, max_values=max_values)
 
-    def decode_model_outputs(self, binary_assignment, decimal_assignment):
-        assignments = torch.round(binary_assignment)
+    def decode_model_outputs(self, model_output):
+        assignments = torch.round(model_output)
         return torch.squeeze(assignments)
 
     def get_optimal_value(self, weights, values, capacities):

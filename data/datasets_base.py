@@ -22,5 +22,5 @@ class MIPDataset(ABC):
         pass
 
     @abstractmethod
-    def decode_model_outputs(self, binary_prediction, decimal_prediction):
+    def decode_model_outputs(self, model_output):
         pass

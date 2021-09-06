@@ -10,7 +10,6 @@ from torch.utils.data import DataLoader, IterableDataset
 import config
 import hyperparams as params
 from data.kanapsack import BinaryKnapsackDataset
-from data.sudoku import BinarySudokuDataset
 from metrics.discrete_metrics import DiscretizationMetrics
 from metrics.general_metrics import AverageMetrics, MetricsHandler
 from model.mip_network import MIPNetwork
@@ -27,18 +26,18 @@ def main():
     sudoku_test_data = "binary/sudoku_test.csv"
     sudoku_train_data = "binary/sudoku_train.csv"
     sudoku_val_data = "binary/sudoku_validate.csv"
-
-    test_dataset = BinarySudokuDataset(sudoku_test_data)
-    train_dataset = BinarySudokuDataset(sudoku_train_data)
-    val_dataset = BinarySudokuDataset(sudoku_val_data)
+    #
+    # test_dataset = BinarySudokuDataset(sudoku_test_data)
+    # train_dataset = BinarySudokuDataset(sudoku_train_data)
+    # val_dataset = BinarySudokuDataset(sudoku_val_data)
 
     # test_dataset = IntegerSudokuDataset(sudoku_test_data)
     # train_dataset = IntegerSudokuDataset(sudoku_train_data)
     # val_dataset = IntegerSudokuDataset(sudoku_val_data)
 
-    # test_dataset = BinaryKnapsackDataset(2, 20)
-    # train_dataset = BinaryKnapsackDataset(2, 20)
-    # val_dataset = BinaryKnapsackDataset(2, 20)
+    test_dataset = BinaryKnapsackDataset(2, 20)
+    train_dataset = BinaryKnapsackDataset(2, 20)
+    val_dataset = BinaryKnapsackDataset(2, 20)
 
     train_dataloader = create_data_loader(train_dataset)
     validation_dataloader = create_data_loader(val_dataset)
@@ -94,8 +93,6 @@ def train(train_steps, experiment, network, optimizer, train_dataloader, dataset
     start = time.time()
     for batched_data in itertools.islice(train_dataloader, train_steps):
         batch_holder = MIPBatchHolder(batched_data, device)
-
-        batch_holder.integer_mask
 
         optimizer.zero_grad(set_to_none=True)
         binary_assignments, decimal_assignments = network.forward(batch_holder, device)
@@ -165,9 +162,9 @@ def evaluate_model(network, test_dataloader, dataset, eval_iterations=None):
     for batched_data in iterable:
         batch_holder = MIPBatchHolder(batched_data, device)
 
-        binary_assignments, decimal_assignments = network.forward(batch_holder, device)
+        outputs = network.forward(batch_holder, device)
 
-        prediction = dataset.decode_model_outputs(binary_assignments[-1], decimal_assignments[-1])
+        prediction = dataset.decode_model_outputs(outputs[-1])
         metrics.update(prediction=prediction, batch_holder=batch_holder)
 
     return metrics.numpy_result
