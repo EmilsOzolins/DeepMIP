@@ -20,15 +20,20 @@ class MIPNetwork(torch.nn.Module):
             PairNorm()
         )
 
-        self.variable_update = nn.Sequential(
-            nn.Linear(self.feature_maps * 3, self.feature_maps),
+        self.make_query_constraints = nn.Sequential(
+            nn.Linear(self.feature_maps, self.feature_maps),
             nn.ReLU(),
             nn.Linear(self.feature_maps, self.feature_maps),
-            PairNorm()
         )
 
-        self.objective_update = nn.Sequential(
-            nn.Linear(self.feature_maps * 2, self.feature_maps),
+        self.make_query_objective = nn.Sequential(
+            nn.Linear(self.feature_maps, self.feature_maps),
+            nn.ReLU(),
+            nn.Linear(self.feature_maps, self.feature_maps),
+        )
+
+        self.variable_update = nn.Sequential(
+            nn.Linear(self.feature_maps * 3, self.feature_maps),
             nn.ReLU(),
             nn.Linear(self.feature_maps, self.feature_maps),
             PairNorm()
@@ -38,13 +43,6 @@ class MIPNetwork(torch.nn.Module):
             nn.Linear(self.feature_maps, self.feature_maps),
             nn.ReLU(),
             nn.Linear(self.feature_maps, output_bits)
-        )
-
-        self.prepare_cond = nn.Sequential(
-            nn.Linear(1, self.feature_maps),
-            nn.ReLU(),
-            nn.Linear(self.feature_maps, self.feature_maps),
-            PairNorm()
         )
 
         self.noise = torch.distributions.Normal(0, 1)
@@ -58,24 +56,29 @@ class MIPNetwork(torch.nn.Module):
         _, objective_count = batch_holder.vars_inst_graph.size()
 
         variables = torch.ones([var_count, self.feature_maps], device=device)
-        constraints = self.prepare_cond(torch.unsqueeze(batch_holder.const_values, dim=-1))
-        objectives = torch.ones([objective_count, self.feature_maps], device=device)
+        constraints = torch.ones([const_count, self.feature_maps], device=device)
 
         binary_outputs = []
         decimal_outputs = []
 
-        for i in range(self.pass_steps):
-            var2obj_msg = torch.sparse.mm(batch_holder.vars_obj_graph.t(), variables)
-            var2obj_msg = torch.cat([objectives, var2obj_msg], dim=-1)
-            objectives = self.objective_update(var2obj_msg)
+        obj_multipliers = torch.sparse.sum(batch_holder.vars_obj_graph, dim=-1).to_dense()
+        obj_multipliers = torch.unsqueeze(obj_multipliers, dim=-1)
 
-            var2const_msg = torch.sparse.mm(batch_holder.vars_const_graph.t(), variables)
-            const_msg = torch.cat([constraints, var2const_msg], dim=-1)
+        const_values = torch.unsqueeze(batch_holder.const_values, dim=-1)
+
+        for i in range(self.pass_steps):
+            const_query = self.make_query_constraints(variables)  # TODO: Experiment with noise
+            var2const_msg = torch.sparse.mm(batch_holder.vars_const_graph.t(), const_query)
+            const_loss = torch.relu(var2const_msg - const_values)
+
+            const_msg = torch.cat([constraints, const_loss], dim=-1)
             constraints = self.constraint_update(const_msg)
 
+            obj_query = self.make_query_objective(variables)
+            obj_query = obj_query * obj_multipliers
+
             const2var_msg = torch.sparse.mm(batch_holder.vars_const_graph, constraints)
-            obj2var_msg = torch.sparse.mm(batch_holder.vars_obj_graph, objectives)
-            var_msg = torch.cat([variables, const2var_msg, obj2var_msg], dim=-1)
+            var_msg = torch.cat([variables, const2var_msg, obj_query], dim=-1)
             variables = self.variable_update(var_msg)
 
             out_vars = self.output(variables)
@@ -83,11 +86,10 @@ class MIPNetwork(torch.nn.Module):
 
             binary_outputs.append(out)
 
-            decimal_pred = torch.sum(self.powers_of_two * out, dim=-1, keepdim=True)
+            decimal_pred = torch.sum(self.powers_of_two * out, dim=-1, keepdim=True)  # TODO: Get rid of this
             decimal_outputs.append(decimal_pred)
 
             constraints = constraints.detach() * 0.2 + constraints * 0.8
             variables = variables.detach() * 0.2 + variables * 0.8
-            objectives = objectives.detach() * 0.2 + objectives * 0.8
 
         return binary_outputs, decimal_outputs
