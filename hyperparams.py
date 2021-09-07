@@ -5,7 +5,7 @@ train_steps = 300000
 batch_size = 64
 
 # Optimizer
-learning_rate = 0.00001
+learning_rate = 0.0001
 
 # Model
 recurrent_steps = 8

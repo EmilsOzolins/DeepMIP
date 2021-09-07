@@ -102,17 +102,11 @@ def train(train_steps, experiment, network, optimizer, train_dataloader, dataset
         total_loss_o = 0
         total_loss_c = 0
         for asn in outputs:
-            left_side = torch.sparse.mm(batch_holder.vars_const_graph.t(), asn)
-            loss_c = torch.relu(left_side - torch.unsqueeze(batch_holder.const_values, dim=-1))
-            # loss_c = torch.square(loss_c)
-            loss_c = torch.sparse.mm(batch_holder.const_inst_graph.t(), loss_c)
-
-            loss_o = torch.sparse.mm(batch_holder.vars_obj_graph.t(), asn)
-
-            total_loss_c += torch.mean(loss_c)
-            total_loss_o += torch.mean(loss_o)  # Calculate mean over graphs
-
-            loss += torch.mean(loss_c + loss_o * 0.3)
+            _, loss_c, loss_o = sum_loss(asn, batch_holder)
+            l = combined_loss(asn, batch_holder)
+            loss += l
+            total_loss_o += loss_o
+            total_loss_c += loss_c
 
         steps_taken = len(outputs)
 
@@ -132,6 +126,47 @@ def train(train_steps, experiment, network, optimizer, train_dataloader, dataset
         experiment.log_metric("loss_const", total_loss_c)
 
     return loss_avg.numpy_result, time.time() - start, metrics.numpy_result
+
+
+def combined_loss(asn, batch_holder):
+    """
+    Makes objective loss dependent on constraint loss.
+    """
+    left_side = torch.sparse.mm(batch_holder.vars_const_graph.t(), asn)
+    loss_c = torch.relu(left_side - torch.unsqueeze(batch_holder.const_values, dim=-1))
+
+    vars_const_graph = batch_holder.vars_const_graph
+    # TODO: This is highly ineffective, make it only once
+    vars_const_adj = torch.sparse_coo_tensor(vars_const_graph.indices(), torch.ones_like(vars_const_graph.values()),
+                                             size=vars_const_graph.size(), device=vars_const_graph.device)
+    loss_per_var = torch.sparse.mm(vars_const_adj, loss_c)
+    # TODO: Maybe zero is too strict and small leak should be allowed?
+    mask = torch.isclose(loss_per_var, torch.zeros_like(loss_per_var)).float()
+    mask = mask * 2 - 1
+    loss_per_var = mask * (loss_per_var + 1)
+
+    # TODO: If no objective, optimize constraint loss directly
+    vars_obj_graph = batch_holder.vars_obj_graph
+
+    # TODO: This also should be cached and calculated only once per batch (in model we have the same thing)
+    if vars_obj_graph._nnz() == 0:
+        obj_multipliers = torch.zeros([loss_per_var.size()[0]], device=loss_per_var.device)
+    else:
+        obj_multipliers = torch.sparse.sum(vars_obj_graph, dim=-1).to_dense()
+    obj_multipliers = torch.unsqueeze(obj_multipliers, dim=-1)
+
+    # TODO: Per graph mean
+    return torch.sum(obj_multipliers * loss_per_var * asn)
+
+
+def sum_loss(asn, batch_holder):
+    left_side = torch.sparse.mm(batch_holder.vars_const_graph.t(), asn)
+    loss_c = torch.relu(left_side - torch.unsqueeze(batch_holder.const_values, dim=-1))
+    # loss_c = torch.square(loss_c)
+    loss_c = torch.sparse.mm(batch_holder.const_inst_graph.t(), loss_c)
+    loss_o = torch.sparse.mm(batch_holder.vars_obj_graph.t(), asn)
+
+    return torch.mean(loss_c + loss_o * 0.3), torch.mean(loss_c), torch.mean(loss_o)
 
 
 def create_data_loader(dataset):
