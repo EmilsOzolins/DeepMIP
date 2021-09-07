@@ -140,6 +140,11 @@ class MIPBatchHolder:
         return torch.sparse_coo_tensor(indices, values, size=size, device=self._device).coalesce()
 
     @cached_property
+    def binary_vars_const_graph(self):
+        indices, values, _, size = self._batched_data["mip"]["constraints"]
+        return torch.sparse_coo_tensor(indices, torch.ones_like(values), size=size, device=self._device)
+
+    @cached_property
     def const_values(self):
         *_, constraint_values, _ = self._batched_data["mip"]["constraints"]
         return constraint_values.to(device=self._device)
@@ -172,6 +177,15 @@ class MIPBatchHolder:
         mask = torch.zeros([size[0]], device=self._device)
         indices = self._batched_data["mip"]["integer_variables"].to(device=self._device)
         return torch.scatter(mask, dim=0, index=indices, value=1.0)
+
+    @cached_property
+    def objective_multipliers(self):
+        var_count = self.vars_obj_graph.size(0)
+
+        if self.vars_obj_graph._nnz() == 0:
+            return torch.zeros([var_count], device=self._device)
+
+        return torch.sparse.sum(self.vars_obj_graph, dim=-1).to_dense()
 
     @lru_cache(maxsize=None)
     def get_data(self, *keys: str):

@@ -134,29 +134,18 @@ def combined_loss(asn, batch_holder):
     """
     left_side = torch.sparse.mm(batch_holder.vars_const_graph.t(), asn)
     loss_c = torch.relu(left_side - torch.unsqueeze(batch_holder.const_values, dim=-1))
+    loss_per_var = torch.sparse.mm(batch_holder.binary_vars_const_graph, loss_c)
 
-    vars_const_graph = batch_holder.vars_const_graph
-    # TODO: This is highly ineffective, make it only once
-    vars_const_adj = torch.sparse_coo_tensor(vars_const_graph.indices(), torch.ones_like(vars_const_graph.values()),
-                                             size=vars_const_graph.size(), device=vars_const_graph.device)
-    loss_per_var = torch.sparse.mm(vars_const_adj, loss_c)
     # TODO: Maybe zero is too strict and small leak should be allowed?
     mask = torch.isclose(loss_per_var, torch.zeros_like(loss_per_var)).float()
     mask = mask * 2 - 1
     loss_per_var = mask * (loss_per_var + 1)
 
     # TODO: If no objective, optimize constraint loss directly
-    vars_obj_graph = batch_holder.vars_obj_graph
+    obj_multipliers = torch.unsqueeze(batch_holder.objective_multipliers, dim=-1)
 
-    # TODO: This also should be cached and calculated only once per batch (in model we have the same thing)
-    if vars_obj_graph._nnz() == 0:
-        obj_multipliers = torch.zeros([loss_per_var.size()[0]], device=loss_per_var.device)
-    else:
-        obj_multipliers = torch.sparse.sum(vars_obj_graph, dim=-1).to_dense()
-    obj_multipliers = torch.unsqueeze(obj_multipliers, dim=-1)
-
-    # TODO: Per graph mean
-    return torch.sum(obj_multipliers * loss_per_var * asn)
+    graph_loss = torch.sparse.mm(batch_holder.vars_inst_graph.t(), obj_multipliers * loss_per_var * asn)
+    return torch.mean(graph_loss)
 
 
 def sum_loss(asn, batch_holder):

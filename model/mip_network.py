@@ -60,13 +60,7 @@ class MIPNetwork(torch.nn.Module):
 
         outputs = []
 
-        vars_obj_graph = batch_holder.vars_obj_graph
-        if vars_obj_graph._nnz() == 0:
-            obj_multipliers = torch.zeros([var_count], device=device)
-        else:
-            obj_multipliers = torch.sparse.sum(vars_obj_graph, dim=-1).to_dense()
-        obj_multipliers = torch.unsqueeze(obj_multipliers, dim=-1)
-
+        obj_multipliers = torch.unsqueeze(batch_holder.objective_multipliers, dim=-1)
         const_values = torch.unsqueeze(batch_holder.const_values, dim=-1)
 
         for i in range(self.pass_steps):
