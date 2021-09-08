@@ -5,18 +5,13 @@ class PairNorm(torch.nn.Module):
     """ PairNorm: Tackling Oversmoothing in GNNs https://arxiv.org/abs/1909.12223
     """
 
-    def __init__(self, epsilon=1e-6, subtract_mean=False, **kwargs):
+    def __init__(self, s=1, epsilon=1e-6, subtract_mean=True, **kwargs):
         super(PairNorm, self).__init__()
         self.epsilon = epsilon
-        self.bias = None
         self.subtract_mean = subtract_mean
+        self.s = s
 
     def forward(self, inputs):
-        """
-        :param graph: graph level adjacency matrix
-        :param count_in_graph: element count in each graph
-        :param inputs: input tensor variables or clauses state
-        """
         # TODO: Normalize per batch instance similarly as in QuerySAT
 
         # input size: cells x feature_maps
@@ -25,4 +20,20 @@ class PairNorm(torch.nn.Module):
             inputs -= mean
 
         variance = torch.mean(torch.square(inputs), dim=1, keepdim=True)
-        return inputs * torch.rsqrt(variance + self.epsilon)
+        return self.s * inputs * torch.rsqrt(variance + self.epsilon)
+
+
+class NodeNorm(torch.nn.Module):
+    """ Understanding and Resolving Performance
+    Degradation in Graph Convolutional Networks - https://arxiv.org/pdf/2006.07107.pdf
+    """
+
+    def __init__(self, p=2, epsilon=1e-6, **kwargs):
+        super(NodeNorm, self).__init__()
+        self.epsilon = epsilon
+        self.p = p
+
+    def forward(self, inputs):
+        std = torch.std(inputs, dim=-1, keepdim=True)
+        std = torch.pow(std, 1 / self.p)
+        return inputs * torch.reciprocal(std + self.epsilon)
