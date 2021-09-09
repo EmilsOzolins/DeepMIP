@@ -92,7 +92,7 @@ class BinaryKnapsackDataset(BoundedKnapsackDataset):
 
     def get_optimal_value(self, weights, values, capacities):
         solver = pywrapknapsack_solver.KnapsackSolver(
-            pywrapknapsack_solver.KnapsackSolver.KNAPSACK_DYNAMIC_PROGRAMMING_SOLVER, 'KnapsackExample')
+            pywrapknapsack_solver.KnapsackSolver.KNAPSACK_BRUTE_FORCE_SOLVER, 'KnapsackExample')
 
         solver.Init(values, [weights], capacities)
         return solver.Solve()

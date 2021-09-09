@@ -33,7 +33,7 @@ class MIPNetwork(torch.nn.Module):
         )
 
         self.variable_update = nn.Sequential(
-            nn.Linear(self.feature_maps * 3, self.feature_maps),
+            nn.Linear(self.feature_maps * 5, self.feature_maps),
             nn.ReLU(),
             nn.Linear(self.feature_maps, self.feature_maps),
             NodeNorm()
@@ -63,25 +63,31 @@ class MIPNetwork(torch.nn.Module):
 
         for i in range(self.pass_steps):
             const_query = self.make_query_constraints(variables)
-            const_query = torch.sigmoid(const_query)
-            left_side_value = torch.sparse.mm(batch_holder.vars_const_graph.t(), const_query)
+            sig_const_query = torch.sigmoid(const_query)
+            left_side_value = torch.sparse.mm(batch_holder.vars_const_graph.t(), sig_const_query)
             const_loss = left_side_value - const_values
 
+            loss = torch.sum(torch.relu(const_loss))
+            const_gradient = torch.autograd.grad([loss], [const_query], create_graph=True)[0]
             # var2const_msg = torch.sparse.mm(batch_holder.vars_const_graph.t(), variables)
 
             const_msg = torch.cat([constraints, const_loss], dim=-1)
             constraints = self.constraint_update(const_msg)
 
             obj_query = self.make_query_objective(variables)
-            obj_query = torch.sigmoid(obj_query) * obj_multipliers
+            obj_loss = torch.sigmoid(obj_query) * obj_multipliers
             # obj_query = self.combined_loss(obj_query, batch_holder)
 
+            obj_gradient = torch.autograd.grad([obj_loss.sum()], [obj_query], create_graph=True)[0]
+
             const2var_msg = torch.sparse.mm(batch_holder.vars_const_graph, constraints)
-            var_msg = torch.cat([variables, const2var_msg, obj_query], dim=-1)
+            var_msg = torch.cat([variables, const2var_msg, obj_loss, const_gradient, obj_gradient], dim=-1)
             variables = self.variable_update(var_msg)
 
             out_vars = self.output(variables)
             int_noise = self.noise.sample(out_vars.size()).cuda()
+            # int_noise = torch.nn.Dropout(p=0.2)(int_noise)
+
             # Noise is not applied to variables that doesn't have integer constraint
             masked_int_noise = int_noise * torch.unsqueeze(batch_holder.integer_mask, dim=-1)
 
