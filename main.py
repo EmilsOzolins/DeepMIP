@@ -6,6 +6,7 @@ from pathlib import Path
 import torch.sparse
 from comet_ml import Experiment
 from torch.utils.data import DataLoader, IterableDataset
+from torch.utils.tensorboard import SummaryWriter
 
 import config
 import hyperparams as params
@@ -52,6 +53,8 @@ def main():
     current_step = 0
     train_steps = 1000
 
+    summary = SummaryWriter("/tmp/model")
+
     while current_step < params.train_steps:
         with experiment.train():
             network.train()
@@ -61,6 +64,16 @@ def main():
             current_step += train_steps
             print(format_metrics("train", current_step, {**disc_metric, **loss_res, "elapsed_time": elapsed_time}))
             experiment.log_metrics({**disc_metric, **loss_res, "elapsed_time": elapsed_time})
+
+            for name, param in network.named_parameters():
+                summary.add_histogram("grad/" + name, param.grad, current_step)
+                summary.add_histogram("params/" + name, param.data, current_step)
+
+            for k, v in loss_res.items():
+                summary.add_scalar("loss/" + k, v, current_step)
+
+            for k, v in disc_metric.items():
+                summary.add_scalar("discrete/" + k, v, current_step)
 
         # TODO: Implement saving to checkpoint - model, optimizer and steps
         # TODO: Implement training, validating and tasting from checkpoint
@@ -72,6 +85,12 @@ def main():
 
             print(format_metrics("val", current_step, results))
             experiment.log_metrics(results)
+
+            for k, v in results.items():
+                summary.add_scalar("validate/" + k, v, current_step, new_style=True)
+
+    summary.flush()
+    summary.close()
 
     with experiment.test():
         network.eval()

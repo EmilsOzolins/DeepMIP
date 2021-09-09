@@ -23,6 +23,8 @@ class MIPMetrics(StackableMetrics):
 
         mean_optimality_gap = self._mean_optimality_gap(vars_obj_graph, opt_value, prediction)
         max_optimality_gap = self._max_optimality_gap(vars_obj_graph, opt_value, prediction)
+        median_optimality_gap = self._median_optimality_gap(vars_obj_graph, opt_value, prediction)
+        quantile_075_gap = self._quantile_optimality_gap(0.75, vars_obj_graph, opt_value, prediction)
 
         found_optimum = self._found_optimum(vars_obj_graph, opt_value, prediction)
         fully_solved = self._totally_solved(vars_const_graph, const_inst_graph,
@@ -33,6 +35,8 @@ class MIPMetrics(StackableMetrics):
             fully_satisfied_instances=fully_sat_mips,
             mean_optimality_gap=mean_optimality_gap,
             max_optimality_gap=max_optimality_gap,
+            quantile_0_5_opt_gap=median_optimality_gap,
+            quantile_0_75_opt_gap=quantile_075_gap,
             optimum_found=found_optimum,
             fully_solved=fully_solved
         )
@@ -72,6 +76,22 @@ class MIPMetrics(StackableMetrics):
         optimality_gap = torch.abs(opt_values - predicted_val)
 
         return torch.mean(optimality_gap)
+
+    @staticmethod
+    def _median_optimality_gap(vars_obj_graph, opt_values, prediction):
+        predicted_val = torch.sparse.mm(vars_obj_graph.t(), torch.unsqueeze(prediction, dim=-1))
+        predicted_val = torch.abs(predicted_val)
+        optimality_gap = torch.abs(opt_values - predicted_val)
+
+        return torch.median(optimality_gap)
+
+    @staticmethod
+    def _quantile_optimality_gap(q, vars_obj_graph, opt_values, prediction):
+        predicted_val = torch.sparse.mm(vars_obj_graph.t(), torch.unsqueeze(prediction, dim=-1))
+        predicted_val = torch.abs(predicted_val)
+        optimality_gap = torch.abs(opt_values - predicted_val)
+
+        return torch.quantile(optimality_gap, q)
 
     @staticmethod
     def _max_optimality_gap(vars_obj_graph, opt_values, prediction):

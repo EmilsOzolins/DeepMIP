@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from model.normalization import PairNorm, NodeNorm
+from model.normalization import NodeNorm
 from utils.data import MIPBatchHolder
 
 
@@ -17,7 +17,7 @@ class MIPNetwork(torch.nn.Module):
             nn.Linear(self.feature_maps * 2, self.feature_maps),
             nn.ReLU(),
             nn.Linear(self.feature_maps, self.feature_maps),
-            PairNorm()
+            NodeNorm()
         )
 
         self.make_query_constraints = nn.Sequential(
@@ -36,7 +36,7 @@ class MIPNetwork(torch.nn.Module):
             nn.Linear(self.feature_maps * 3, self.feature_maps),
             nn.ReLU(),
             nn.Linear(self.feature_maps, self.feature_maps),
-            PairNorm()
+            NodeNorm()
         )
 
         self.output = nn.Sequential(
@@ -65,7 +65,7 @@ class MIPNetwork(torch.nn.Module):
             const_query = self.make_query_constraints(variables)
             const_query = torch.sigmoid(const_query)
             left_side_value = torch.sparse.mm(batch_holder.vars_const_graph.t(), const_query)
-            const_loss = torch.relu(left_side_value - const_values)
+            const_loss = left_side_value - const_values
 
             # var2const_msg = torch.sparse.mm(batch_holder.vars_const_graph.t(), variables)
 
