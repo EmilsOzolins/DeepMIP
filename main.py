@@ -14,6 +14,7 @@ from metrics.general_metrics import AverageMetrics, MetricsHandler
 from model.mip_network import MIPNetwork
 from utils.data import batch_data, MIPBatchHolder
 from utils.visualize import format_metrics
+from datetime import datetime as dt
 
 
 def main():
@@ -51,7 +52,9 @@ def main():
     current_step = 0
     train_steps = 1000
 
-    summary = SummaryWriter("/tmp/model")
+    now = dt.now()
+    run_directory = config.model_dir + "/" + now.strftime("%H:%M:%S_%d_%m")
+    summary = SummaryWriter(run_directory)
 
     while current_step < params.train_steps:
         # with experiment.train():
@@ -73,7 +76,12 @@ def main():
         for k, v in disc_metric.items():
             summary.add_scalar("discrete/" + k, v, current_step)
 
-        # TODO: Implement saving to checkpoint - model, optimizer and steps
+        torch.save({
+            'step': current_step,
+            'model_state_dict': network.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+        }, run_directory + "/model.pth")
+
         # TODO: Implement training, validating and tasting from checkpoint
 
         # with experiment.validate():
