@@ -1,9 +1,7 @@
 import itertools
 import os
 import time
-from pathlib import Path
 
-from comet_ml import Experiment
 import torch.sparse
 from torch.utils.data import DataLoader, IterableDataset
 from torch.utils.tensorboard import SummaryWriter
@@ -19,9 +17,9 @@ from utils.visualize import format_metrics
 
 
 def main():
-    experiment = Experiment(disabled=True)  # Set to True to disable logging in comet.ml
-    experiment.log_parameters({x: getattr(params, x) for x in dir(params) if not x.startswith("__")})
-    experiment.log_code(folder=str(Path().resolve()))
+    # experiment = Experiment(disabled=True)  # Set to True to disable logging in comet.ml
+    # experiment.log_parameters({x: getattr(params, x) for x in dir(params) if not x.startswith("__")})
+    # experiment.log_code(folder=str(Path().resolve()))
 
     # TODO: Move dataset selection to separate resolver and add flag in config
     sudoku_test_data = "binary/sudoku_test.csv"
@@ -56,55 +54,55 @@ def main():
     summary = SummaryWriter("/tmp/model")
 
     while current_step < params.train_steps:
-        with experiment.train():
-            network.train()
-            torch.enable_grad()
-            loss_res, elapsed_time, disc_metric = train(train_steps, experiment, network,
-                                                        optimizer, train_dataloader, train_dataset)
-            current_step += train_steps
-            print(format_metrics("train", current_step, {**disc_metric, **loss_res, "elapsed_time": elapsed_time}))
-            experiment.log_metrics({**disc_metric, **loss_res, "elapsed_time": elapsed_time})
+        # with experiment.train():
+        network.train()
+        torch.enable_grad()
+        loss_res, elapsed_time, disc_metric = train(train_steps, network,
+                                                    optimizer, train_dataloader, train_dataset)
+        current_step += train_steps
+        print(format_metrics("train", current_step, {**disc_metric, **loss_res, "elapsed_time": elapsed_time}))
+        # experiment.log_metrics({**disc_metric, **loss_res, "elapsed_time": elapsed_time})
 
-            for name, param in network.named_parameters():
-                summary.add_histogram("grad/" + name, param.grad, current_step)
-                summary.add_histogram("params/" + name, param.data, current_step)
+        for name, param in network.named_parameters():
+            summary.add_histogram("grad/" + name, param.grad, current_step)
+            summary.add_histogram("params/" + name, param.data, current_step)
 
-            for k, v in loss_res.items():
-                summary.add_scalar("loss/" + k, v, current_step)
+        for k, v in loss_res.items():
+            summary.add_scalar("loss/" + k, v, current_step)
 
-            for k, v in disc_metric.items():
-                summary.add_scalar("discrete/" + k, v, current_step)
+        for k, v in disc_metric.items():
+            summary.add_scalar("discrete/" + k, v, current_step)
 
         # TODO: Implement saving to checkpoint - model, optimizer and steps
         # TODO: Implement training, validating and tasting from checkpoint
 
-        with experiment.validate():
-            network.eval()
-            torch.no_grad()
-            results = evaluate_model(network, validation_dataloader, val_dataset, eval_iterations=100)
+        # with experiment.validate():
+        network.eval()
+        torch.no_grad()
+        results = evaluate_model(network, validation_dataloader, val_dataset, eval_iterations=100)
 
-            print(format_metrics("val", current_step, results))
-            experiment.log_metrics(results)
+        print(format_metrics("val", current_step, results))
+        # experiment.log_metrics(results)
 
-            for k, v in results.items():
-                summary.add_scalar("validate/" + k, v, current_step, new_style=True)
+        for k, v in results.items():
+            summary.add_scalar("validate/" + k, v, current_step, new_style=True)
 
     summary.flush()
     summary.close()
 
-    with experiment.test():
-        network.eval()
-        torch.no_grad()
-        test_dataloader = create_data_loader(test_dataset)
+    # with experiment.test():
+    network.eval()
+    torch.no_grad()
+    test_dataloader = create_data_loader(test_dataset)
 
-        results = evaluate_model(network, test_dataloader, test_dataset, eval_iterations=100)
+    results = evaluate_model(network, test_dataloader, test_dataset, eval_iterations=100)
 
-        print("\n\n\n------------------ TESTING ------------------\n")
-        print(format_metrics("test", params.train_steps, results))
-        experiment.log_metrics(results)
+    print("\n\n\n------------------ TESTING ------------------\n")
+    print(format_metrics("test", params.train_steps, results))
+    # experiment.log_metrics(results)
 
 
-def train(train_steps, experiment, network, optimizer, train_dataloader, dataset):
+def train(train_steps, network, optimizer, train_dataloader, dataset):
     loss_avg = AverageMetrics()  # TODO: Think what to do with this. LossMetrics???
     metrics = MetricsHandler(DiscretizationMetrics(), *dataset.train_metrics)
     device = torch.device(config.device)
@@ -139,10 +137,10 @@ def train(train_steps, experiment, network, optimizer, train_dataloader, dataset
 
         loss.backward()
         optimizer.step()
-
-        experiment.log_metric("loss", loss)
-        experiment.log_metric("loss_opt", total_loss_o)
-        experiment.log_metric("loss_const", total_loss_c)
+        #
+        # experiment.log_metric("loss", loss)
+        # experiment.log_metric("loss_opt", total_loss_o)
+        # experiment.log_metric("loss_const", total_loss_c)
 
     return loss_avg.numpy_result, time.time() - start, metrics.numpy_result
 
@@ -168,7 +166,7 @@ def combined_loss(asn, batch_holder):
     # TODO: If no objective, optimize constraint loss directly
     obj_multipliers = torch.unsqueeze(batch_holder.objective_multipliers, dim=-1)
 
-    graph_loss = torch.sparse.mm(batch_holder.vars_inst_graph.t(), (obj_multipliers * asn * 0.01) * loss_per_var)
+    graph_loss = torch.sparse.mm(batch_holder.vars_inst_graph.t(), obj_multipliers * asn * loss_per_var)
     return torch.mean(graph_loss)
 
 
@@ -179,7 +177,7 @@ def sum_loss(asn, batch_holder):
     loss_c = torch.sparse.mm(batch_holder.const_inst_graph.t(), loss_c)
     loss_o = torch.sparse.mm(batch_holder.vars_obj_graph.t(), asn)
 
-    return torch.mean(loss_c + loss_o * 0.01), torch.mean(loss_c), torch.mean(loss_o)
+    return torch.mean(loss_c + loss_o * 0.0001), torch.mean(loss_c), torch.mean(loss_o)
 
 
 def create_data_loader(dataset):
