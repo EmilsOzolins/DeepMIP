@@ -3,8 +3,8 @@ import os
 import time
 from pathlib import Path
 
-import torch.sparse
 from comet_ml import Experiment
+import torch.sparse
 from torch.utils.data import DataLoader, IterableDataset
 from torch.utils.tensorboard import SummaryWriter
 
@@ -121,8 +121,8 @@ def train(train_steps, experiment, network, optimizer, train_dataloader, dataset
         total_loss_o = 0
         total_loss_c = 0
         for asn in outputs:
-            _, loss_c, loss_o = sum_loss(asn, batch_holder)
-            l = combined_loss(asn, batch_holder)
+            l, loss_c, loss_o = sum_loss(asn, batch_holder)
+            # l = combined_loss(asn, batch_holder)
             loss += l
             total_loss_o += loss_o
             total_loss_c += loss_c
@@ -168,7 +168,7 @@ def combined_loss(asn, batch_holder):
     # TODO: If no objective, optimize constraint loss directly
     obj_multipliers = torch.unsqueeze(batch_holder.objective_multipliers, dim=-1)
 
-    graph_loss = torch.sparse.mm(batch_holder.vars_inst_graph.t(), obj_multipliers * loss_per_var * asn)
+    graph_loss = torch.sparse.mm(batch_holder.vars_inst_graph.t(), (obj_multipliers * asn * 0.01) * loss_per_var)
     return torch.mean(graph_loss)
 
 
@@ -179,7 +179,7 @@ def sum_loss(asn, batch_holder):
     loss_c = torch.sparse.mm(batch_holder.const_inst_graph.t(), loss_c)
     loss_o = torch.sparse.mm(batch_holder.vars_obj_graph.t(), asn)
 
-    return torch.mean(loss_c + loss_o * 0.3), torch.mean(loss_c), torch.mean(loss_o)
+    return torch.mean(loss_c + loss_o * 0.01), torch.mean(loss_c), torch.mean(loss_o)
 
 
 def create_data_loader(dataset):

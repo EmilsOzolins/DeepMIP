@@ -4,6 +4,7 @@ from typing import Iterator, Dict, List
 
 import torch
 from ortools.algorithms import pywrapknapsack_solver
+from ortools.linear_solver import pywraplp
 from torch.utils.data import IterableDataset
 
 from data.datasets_base import MIPDataset
@@ -40,11 +41,31 @@ class BoundedKnapsackDataset(MIPDataset, IterableDataset):
                 min_weight = min(weights)
                 capacity = random.randint(min_weight, max_weight)
 
+                relaxed_int = self.is_relaxed_solution_int(var_indices, weights, values, capacity)
+                if relaxed_int:
+                    # Don't include solutions that can be solved with LP
+                    continue
+
                 solution = self.get_optimal_value(weights, values, [capacity])
+
                 yield {"mip": self.convert_to_mip(var_indices, weights, values, copies, capacity),
                        "optimal_solution": torch.as_tensor([solution], dtype=torch.float32)}
 
         return generator()
+
+    def is_relaxed_solution_int(self, var_indices, weights, values, capacity):
+        solver = pywraplp.Solver.CreateSolver('GLOP')
+        variables = [solver.NumVar(0, self._max_copies, str(i)) for i in var_indices]
+
+        left_side = sum([w * v for w, v in zip(weights, variables)])
+        solver.Add(left_side <= capacity)
+        solver.Maximize(sum([v * var for v, var in zip(values, variables)]))
+
+        solver.Solve()
+        solution_vars = [v.solution_value() for v in variables]
+        is_int = [s.is_integer() for s in solution_vars]
+
+        return all(is_int)
 
     @abstractmethod
     def get_optimal_value(self, weights, values, capacities):

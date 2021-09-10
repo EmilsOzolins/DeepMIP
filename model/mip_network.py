@@ -15,9 +15,9 @@ class MIPNetwork(torch.nn.Module):
 
         self.constraint_update = nn.Sequential(
             nn.Linear(self.feature_maps * 2, self.feature_maps),
+            NodeNorm(),
             nn.ReLU(),
             nn.Linear(self.feature_maps, self.feature_maps),
-            NodeNorm()
         )
 
         self.make_query_constraints = nn.Sequential(
@@ -34,9 +34,9 @@ class MIPNetwork(torch.nn.Module):
 
         self.variable_update = nn.Sequential(
             nn.Linear(self.feature_maps * 5, self.feature_maps),
+            NodeNorm(),
             nn.ReLU(),
             nn.Linear(self.feature_maps, self.feature_maps),
-            NodeNorm()
         )
 
         self.output = nn.Sequential(
@@ -50,6 +50,7 @@ class MIPNetwork(torch.nn.Module):
         self.step = 0
 
     def forward(self, batch_holder: MIPBatchHolder, device):
+        # TODO: Experiment with disentangled architecture
         var_count, const_count = batch_holder.vars_const_graph.size()
         _, objective_count = batch_holder.vars_inst_graph.size()
 
@@ -67,26 +68,30 @@ class MIPNetwork(torch.nn.Module):
             left_side_value = torch.sparse.mm(batch_holder.vars_const_graph.t(), sig_const_query)
             const_loss = left_side_value - const_values
 
-            loss = torch.sum(torch.relu(const_loss))
-            const_gradient = torch.autograd.grad([loss], [const_query], create_graph=True)[0]
+            const_gradient = torch.autograd.grad([torch.relu(const_loss).sum()], [const_query], retain_graph=True)[0]
             # var2const_msg = torch.sparse.mm(batch_holder.vars_const_graph.t(), variables)
 
-            const_msg = torch.cat([constraints, const_loss], dim=-1)
-            constraints = self.constraint_update(const_msg)
+            scalers = torch.sparse.sum(batch_holder.vars_const_graph, dim=0).to_dense()
+            scalers = torch.unsqueeze(scalers, dim=-1)
+
+            const_msg = torch.cat([constraints, const_loss / scalers], dim=-1)
+            constraints = self.constraint_update(const_msg) + 0.5 * constraints
 
             obj_query = self.make_query_objective(variables)
             obj_loss = torch.sigmoid(obj_query) * obj_multipliers
-            # obj_query = self.combined_loss(obj_query, batch_holder)
+            # obj_loss = self.combined_loss(torch.sigmoid(obj_query), batch_holder)
 
-            obj_gradient = torch.autograd.grad([obj_loss.sum()], [obj_query], create_graph=True)[0]
+            obj_gradient = torch.autograd.grad([obj_loss.sum()], [obj_query], retain_graph=True)[0]
+
+            scalers = torch.sparse.sum(batch_holder.vars_const_graph, dim=-1).to_dense()
+            scalers = torch.unsqueeze(scalers, dim=-1)
 
             const2var_msg = torch.sparse.mm(batch_holder.vars_const_graph, constraints)
-            var_msg = torch.cat([variables, const2var_msg, obj_loss, const_gradient, obj_gradient], dim=-1)
-            variables = self.variable_update(var_msg)
+            var_msg = torch.cat([variables, const2var_msg / scalers, obj_loss, const_gradient, obj_gradient], dim=-1)
+            variables = self.variable_update(var_msg) + 0.5 * variables
 
             out_vars = self.output(variables)
             int_noise = self.noise.sample(out_vars.size()).cuda()
-            # int_noise = torch.nn.Dropout(p=0.2)(int_noise)
 
             # Noise is not applied to variables that doesn't have integer constraint
             masked_int_noise = int_noise * torch.unsqueeze(batch_holder.integer_mask, dim=-1)
