@@ -1,0 +1,3 @@
+[submodule "ml4co-competition"]
+	path = ml4co-competition
+	url = git@github.com:ds4dm/ml4co-competition.git
