@@ -41,6 +41,7 @@ class MIPNetwork(torch.nn.Module):
 
         self.output = nn.Sequential(
             nn.Linear(self.feature_maps, self.feature_maps),
+            NodeNorm(),
             nn.ReLU(),
             nn.Linear(self.feature_maps, output_bits)
         )
@@ -68,7 +69,7 @@ class MIPNetwork(torch.nn.Module):
             left_side_value = torch.sparse.mm(batch_holder.vars_const_graph.t(), sig_const_query)
             const_loss = left_side_value - const_values
 
-            const_gradient = torch.autograd.grad([torch.relu(const_loss).sum()], [const_query], retain_graph=True)[0]
+            const_gradient = torch.autograd.grad([torch.relu(const_loss).sum()], [sig_const_query], retain_graph=True)[0]
             # var2const_msg = torch.sparse.mm(batch_holder.vars_const_graph.t(), variables)
 
             scalers = torch.sparse.sum(batch_holder.vars_const_graph, dim=0).to_dense()
@@ -78,10 +79,11 @@ class MIPNetwork(torch.nn.Module):
             constraints = self.constraint_update(const_msg) + 0.5 * constraints
 
             obj_query = self.make_query_objective(variables)
-            obj_loss = torch.sigmoid(obj_query) * obj_multipliers
+            obj_query = torch.sigmoid(obj_query)
+            obj_loss =  obj_query * obj_multipliers
             # obj_loss = self.combined_loss(torch.sigmoid(obj_query), batch_holder)
 
-            obj_gradient = torch.autograd.grad([obj_loss.sum()], [obj_query], retain_graph=True)[0]
+            obj_gradient = torch.autograd.grad([obj_loss.sum()], [obj_query], retain_graph=True)[0]# = obj_multipliers?
 
             scalers = torch.sparse.sum(batch_holder.vars_const_graph, dim=-1).to_dense()
             scalers = torch.unsqueeze(scalers, dim=-1)
@@ -94,15 +96,16 @@ class MIPNetwork(torch.nn.Module):
             int_noise = self.noise.sample(out_vars.size()).cuda()
 
             # Noise is not applied to variables that doesn't have integer constraint
-            masked_int_noise = int_noise * torch.unsqueeze(batch_holder.integer_mask, dim=-1)
+            masked_int_noise = 0.5*int_noise * torch.unsqueeze(batch_holder.integer_mask, dim=-1)
 
-            out = torch.sigmoid(out_vars + masked_int_noise)
+            if self.training: out_vars += masked_int_noise
+            out = torch.sigmoid(out_vars)
             outputs.append(out)
 
             constraints = constraints.detach() * 0.2 + constraints * 0.8
             variables = variables.detach() * 0.2 + variables * 0.8
 
-        return outputs
+        return outputs, out_vars
 
     def combined_loss(self, asn, batch_holder):
         """

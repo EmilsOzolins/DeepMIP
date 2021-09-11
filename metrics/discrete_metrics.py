@@ -35,7 +35,7 @@ class DiscretizationMetrics(StackableMetrics):
     def _mask_discrete_variables(logits: torch.Tensor):
         values = torch.round(logits) - logits
         values = torch.abs(values)
-        return torch.isclose(values, torch.zeros_like(values)).float()
+        return torch.isclose(values, torch.zeros_like(values), atol=0.01).float()
 
     @staticmethod
     def _max_diff_to_discrete(logits: torch.Tensor):

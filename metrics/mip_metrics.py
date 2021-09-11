@@ -16,6 +16,7 @@ class MIPMetrics(StackableMetrics):
         const_inst_graph = batch_holder.const_inst_graph
 
         sat_const = self._satisfied_constraints(prediction, vars_const_graph, const_values)
+        max_violation = self._max_constraints(prediction, vars_const_graph, const_values)
         fully_sat_mips = self._fully_satisfied(prediction, vars_const_graph, const_values, const_inst_graph)
 
         vars_obj_graph = batch_holder.vars_obj_graph
@@ -38,7 +39,8 @@ class MIPMetrics(StackableMetrics):
             quantile_0_5_opt_gap=median_optimality_gap,
             quantile_0_75_opt_gap=quantile_075_gap,
             optimum_found=found_optimum,
-            fully_solved=fully_solved
+            fully_solved=fully_solved,
+            max_violation = max_violation
         )
 
     @property
@@ -105,10 +107,21 @@ class MIPMetrics(StackableMetrics):
         sat_const = self._mask_sat_constraints(const_values, prediction, vars_const_graph)
         return torch.mean(sat_const)
 
+    def _max_constraints(self, prediction, vars_const_graph, const_values):
+        sat_const = self._max_constraint_violation(const_values, prediction, vars_const_graph)
+        return sat_const
+
     @staticmethod
     def _mask_sat_constraints(const_values, prediction, vars_const_graph):
         const_left_val = torch.sparse.mm(vars_const_graph.t(), torch.unsqueeze(prediction, dim=-1))
         sat_const = torch.less_equal(const_left_val, torch.unsqueeze(const_values, dim=-1))
+        sat_const = sat_const.float()
+        return sat_const
+
+    @staticmethod
+    def _max_constraint_violation(const_values, prediction, vars_const_graph):
+        const_left_val = torch.sparse.mm(vars_const_graph.t(), torch.unsqueeze(prediction, dim=-1))
+        sat_const = torch.max(torch.relu(const_left_val - torch.unsqueeze(const_values, dim=-1)))
         sat_const = sat_const.float()
         return sat_const
 

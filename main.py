@@ -14,7 +14,12 @@ from metrics.general_metrics import AverageMetrics, MetricsHandler
 from model.mip_network import MIPNetwork
 from utils.data import batch_data, MIPBatchHolder
 from utils.visualize import format_metrics
+from datetime import datetime
 
+current_time = datetime.now().strftime("%Y%m%d-%H%M%S")
+
+summary = SummaryWriter("/tmp/model/"+current_time)
+global_step = 0
 
 def main():
     # experiment = Experiment(disabled=True)  # Set to True to disable logging in comet.ml
@@ -51,7 +56,7 @@ def main():
     current_step = 0
     train_steps = 1000
 
-    summary = SummaryWriter("/tmp/model")
+    #summary = SummaryWriter("/tmp/model")
 
     while current_step < params.train_steps:
         # with experiment.train():
@@ -103,6 +108,7 @@ def main():
 
 
 def train(train_steps, network, optimizer, train_dataloader, dataset):
+    global global_step
     loss_avg = AverageMetrics()  # TODO: Think what to do with this. LossMetrics???
     metrics = MetricsHandler(DiscretizationMetrics(), *dataset.train_metrics)
     device = torch.device(config.device)
@@ -112,7 +118,7 @@ def train(train_steps, network, optimizer, train_dataloader, dataset):
         batch_holder = MIPBatchHolder(batched_data, device)
 
         optimizer.zero_grad(set_to_none=True)
-        outputs = network.forward(batch_holder, device)
+        outputs, logits = network.forward(batch_holder, device)
 
         # TODO: Deal with this loss garbage
         loss = 0
@@ -134,6 +140,9 @@ def train(train_steps, network, optimizer, train_dataloader, dataset):
         prediction = dataset.decode_model_outputs(outputs[-1])
         loss_avg.update(loss=loss, loss_opt=total_loss_o, loss_const=total_loss_c)
         metrics.update(prediction=prediction, batch_holder=batch_holder, logits=outputs[-1])
+        summary.add_histogram("logits", logits, global_step)
+        summary.add_histogram("values", outputs[-1], global_step)
+        global_step+=1
 
         loss.backward()
         optimizer.step()
@@ -171,13 +180,14 @@ def combined_loss(asn, batch_holder):
 
 
 def sum_loss(asn, batch_holder):
+    eps = 1e-2# TODO. Also eps in validation because there cn be equality constraints
     left_side = torch.sparse.mm(batch_holder.vars_const_graph.t(), asn)
-    loss_c = torch.relu(left_side - torch.unsqueeze(batch_holder.const_values, dim=-1))
-    # loss_c = torch.square(loss_c)
+    loss_c = torch.relu(eps+left_side - torch.unsqueeze(batch_holder.const_values, dim=-1))
+    #loss_c = torch.square(loss_c)
     loss_c = torch.sparse.mm(batch_holder.const_inst_graph.t(), loss_c)
     loss_o = torch.sparse.mm(batch_holder.vars_obj_graph.t(), asn)
 
-    return torch.mean(loss_c + loss_o * 0.0001), torch.mean(loss_c), torch.mean(loss_o)
+    return torch.mean(loss_c + loss_o * 0.00001), torch.mean(loss_c), torch.mean(loss_o)
 
 
 def create_data_loader(dataset):
