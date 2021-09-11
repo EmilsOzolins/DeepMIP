@@ -28,7 +28,7 @@ class NodeNorm(torch.nn.Module):
     Degradation in Graph Convolutional Networks - https://arxiv.org/pdf/2006.07107.pdf
     """
 
-    def __init__(self, p=2, epsilon=1e-6, **kwargs):
+    def __init__(self, p=2, epsilon=1e-3, **kwargs):
         super(NodeNorm, self).__init__()
         self.epsilon = epsilon
         self.p = p

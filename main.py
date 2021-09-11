@@ -14,11 +14,11 @@ from metrics.general_metrics import AverageMetrics, MetricsHandler
 from model.mip_network import MIPNetwork
 from utils.data import batch_data, MIPBatchHolder
 from utils.visualize import format_metrics
-from datetime import datetime
+from datetime import datetime as dt
 
-current_time = datetime.now().strftime("%Y%m%d-%H%M%S")
-
-summary = SummaryWriter("/tmp/model/"+current_time)
+now = dt.now()
+run_directory = config.model_dir + "/" + now.strftime("%H:%M:%S_%d_%m")
+summary = SummaryWriter(run_directory)
 global_step = 0
 
 def main():
@@ -56,8 +56,6 @@ def main():
     current_step = 0
     train_steps = 1000
 
-    #summary = SummaryWriter("/tmp/model")
-
     while current_step < params.train_steps:
         # with experiment.train():
         network.train()
@@ -78,7 +76,12 @@ def main():
         for k, v in disc_metric.items():
             summary.add_scalar("discrete/" + k, v, current_step)
 
-        # TODO: Implement saving to checkpoint - model, optimizer and steps
+        torch.save({
+            'step': current_step,
+            'model_state_dict': network.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+        }, run_directory + "/model.pth")
+
         # TODO: Implement training, validating and tasting from checkpoint
 
         # with experiment.validate():
@@ -183,11 +186,11 @@ def sum_loss(asn, batch_holder):
     eps = 1e-2# TODO. Also eps in validation because there cn be equality constraints
     left_side = torch.sparse.mm(batch_holder.vars_const_graph.t(), asn)
     loss_c = torch.relu(eps+left_side - torch.unsqueeze(batch_holder.const_values, dim=-1))
-    #loss_c = torch.square(loss_c)
+    loss_c = torch.square(loss_c)
     loss_c = torch.sparse.mm(batch_holder.const_inst_graph.t(), loss_c)
     loss_o = torch.sparse.mm(batch_holder.vars_obj_graph.t(), asn)
 
-    return torch.mean(loss_c + loss_o * 0.00001), torch.mean(loss_c), torch.mean(loss_o)
+    return torch.mean(loss_c + loss_o * 0.0001), torch.mean(loss_c), torch.mean(loss_o)
 
 
 def create_data_loader(dataset):

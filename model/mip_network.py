@@ -14,7 +14,7 @@ class MIPNetwork(torch.nn.Module):
         self.pass_steps = pass_steps
 
         self.constraint_update = nn.Sequential(
-            nn.Linear(self.feature_maps * 2, self.feature_maps),
+            nn.Linear(self.feature_maps * 3, self.feature_maps),
             NodeNorm(),
             nn.ReLU(),
             nn.Linear(self.feature_maps, self.feature_maps),
@@ -67,15 +67,16 @@ class MIPNetwork(torch.nn.Module):
             const_query = self.make_query_constraints(variables)
             sig_const_query = torch.sigmoid(const_query)
             left_side_value = torch.sparse.mm(batch_holder.vars_const_graph.t(), sig_const_query)
-            const_loss = left_side_value - const_values
+            const_loss = torch.relu(left_side_value - const_values)
+            const_loss1 = torch.relu(const_values-left_side_value)
 
-            const_gradient = torch.autograd.grad([torch.relu(const_loss).sum()], [sig_const_query], retain_graph=True)[0]
+            const_gradient = torch.autograd.grad([const_loss.sum()], [sig_const_query], retain_graph=True)[0]
             # var2const_msg = torch.sparse.mm(batch_holder.vars_const_graph.t(), variables)
 
             scalers = torch.sparse.sum(batch_holder.vars_const_graph, dim=0).to_dense()
             scalers = torch.unsqueeze(scalers, dim=-1)
 
-            const_msg = torch.cat([constraints, const_loss / scalers], dim=-1)
+            const_msg = torch.cat([constraints, const_loss / scalers, const_loss1/scalers], dim=-1)
             constraints = self.constraint_update(const_msg) + 0.5 * constraints
 
             obj_query = self.make_query_objective(variables)
