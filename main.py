@@ -221,7 +221,7 @@ def evaluate_model(network, test_dataloader, dataset, eval_iterations=None):
     for batched_data in iterable:
         batch_holder = MIPBatchHolder(batched_data, device)
 
-        outputs = network.forward(batch_holder, device)
+        outputs, logits = network.forward(batch_holder, device)
 
         prediction = dataset.decode_model_outputs(outputs[-1])
         metrics.update(prediction=prediction, batch_holder=batch_holder)
