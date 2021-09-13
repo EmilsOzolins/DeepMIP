@@ -72,8 +72,8 @@ class MIPNetwork(torch.nn.Module):
             const_loss1 = torch.relu(const_values - left_side_value)
 
             const_gradient = torch.autograd.grad([const_loss.sum()], [sig_const_query], retain_graph=True)[0]
-            # var2const_msg = torch.sparse.mm(batch_holder.vars_const_graph.t(), variables)
 
+            # TODO: Experiment with mean
             scalers = torch.sparse.sum(batch_holder.vars_const_graph, dim=0).to_dense()
             scalers = torch.unsqueeze(scalers, dim=-1)
 
@@ -81,7 +81,7 @@ class MIPNetwork(torch.nn.Module):
             const_tmp = self.constraint_update(const_msg)
             constraints = const_tmp[:, :self.feature_maps] + 0.5 * constraints
 
-            obj_query = self.make_query_objective(variables)
+            obj_query = self.make_query_objective(variables) # TODO: Use single MLP for queries
             obj_loss = torch.sigmoid(obj_query) * obj_multipliers
 
             # TODO: Experiment with mean
