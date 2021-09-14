@@ -1,6 +1,7 @@
 import itertools
 import os
 import time
+import numpy as np
 
 import torch.sparse
 from torch.utils.data import DataLoader, IterableDataset
@@ -186,11 +187,25 @@ def sum_loss(asn, batch_holder):
     eps = 1e-2# TODO. Also eps in validation because there cn be equality constraints
     left_side = torch.sparse.mm(batch_holder.vars_const_graph.t(), asn)
     loss_c = torch.relu(eps+left_side - torch.unsqueeze(batch_holder.const_values, dim=-1))
+
+    # todo: nicer
+    abs_graph = torch.sparse_coo_tensor(batch_holder.vars_const_graph.indices(), torch.abs(batch_holder.vars_const_graph.values()), size=batch_holder.vars_const_graph.size(), device=batch_holder.vars_const_graph.device)
+    scalers1 = torch.sparse.sum(abs_graph, dim=0).to_dense()
+    scalers2 = torch.sparse.sum(batch_holder.binary_vars_const_graph, dim=0).to_dense()
+    loss_c = loss_c * scalers2 / torch.maximum(scalers1, torch.ones_like(scalers1))
+
     loss_c = torch.square(loss_c)
     loss_c = torch.sparse.mm(batch_holder.const_inst_graph.t(), loss_c)
+    loss_c = torch.sqrt(loss_c + 1e-6) - np.sqrt(1e-6)
     loss_o = torch.sparse.mm(batch_holder.vars_obj_graph.t(), asn)
+    abs_graph_o = torch.sparse_coo_tensor(batch_holder.vars_obj_graph.indices(), torch.abs(batch_holder.vars_obj_graph.values()), size=batch_holder.vars_obj_graph.size(), device=batch_holder.vars_obj_graph.device)
+    scalers1_o = torch.sparse.sum(abs_graph_o, dim=0).to_dense()
+    ones_graph_o = torch.sparse_coo_tensor(batch_holder.vars_obj_graph.indices(), torch.ones_like(batch_holder.vars_obj_graph.values()), size=batch_holder.vars_obj_graph.size(),
+                                          device=batch_holder.vars_obj_graph.device)
+    scalers2_o = torch.sparse.sum(ones_graph_o, dim=0).to_dense()
+    loss_o_scaled = loss_o * scalers2_o / torch.maximum(scalers1_o, torch.ones_like(scalers1_o))
 
-    return torch.mean(loss_c + loss_o * 0.0001), torch.mean(loss_c), torch.mean(loss_o)
+    return torch.mean(loss_c + loss_o_scaled * 0.0001), torch.mean(loss_c), torch.mean(loss_o)
 
 
 def create_data_loader(dataset):
