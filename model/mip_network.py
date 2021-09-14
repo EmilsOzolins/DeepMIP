@@ -20,13 +20,7 @@ class MIPNetwork(torch.nn.Module):
             nn.Linear(self.feature_maps, self.feature_maps * 2),
         )
 
-        self.make_query_constraints = nn.Sequential(
-            nn.Linear(self.feature_maps, self.feature_maps),
-            nn.ReLU(),
-            nn.Linear(self.feature_maps, self.feature_maps),
-        )
-
-        self.make_query_objective = nn.Sequential(
+        self.make_query = nn.Sequential(
             nn.Linear(self.feature_maps, self.feature_maps),
             nn.ReLU(),
             nn.Linear(self.feature_maps, self.feature_maps),
@@ -63,34 +57,33 @@ class MIPNetwork(torch.nn.Module):
         const_values = torch.unsqueeze(batch_holder.const_values, dim=-1)
         obj_multipliers = torch.unsqueeze(batch_holder.objective_multipliers, dim=-1)
 
+        # TODO: Experiment with mean
+        const_scaler = torch.sparse.sum(batch_holder.vars_const_graph, dim=0).to_dense()
+        const_scaler = torch.unsqueeze(const_scaler, dim=-1)
+
+        # TODO: Experiment with mean
+        vars_scaler = torch.sparse.sum(batch_holder.vars_const_graph, dim=-1).to_dense()
+        vars_scaler = torch.unsqueeze(vars_scaler, dim=-1)
+
         for i in range(self.pass_steps):
             # TODO: Noise for queries
-            const_query = self.make_query_constraints(variables)
-            sig_const_query = torch.sigmoid(const_query)
-            left_side_value = torch.sparse.mm(batch_holder.vars_const_graph.t(), sig_const_query)
+            query = self.make_query(variables)
+            query = torch.sigmoid(query)
+
+            left_side_value = torch.sparse.mm(batch_holder.vars_const_graph.t(), query)
             const_loss = torch.relu(left_side_value - const_values)
             const_loss1 = torch.relu(const_values - left_side_value)
 
-            const_gradient = torch.autograd.grad([const_loss.sum()], [sig_const_query], retain_graph=True)[0]
+            obj_loss = query * obj_multipliers
+            const_gradient = torch.autograd.grad([const_loss.sum() + obj_loss.sum()], [query], retain_graph=True)[0]
 
-            # TODO: Experiment with mean
-            scalers = torch.sparse.sum(batch_holder.vars_const_graph, dim=0).to_dense()
-            scalers = torch.unsqueeze(scalers, dim=-1)
-
-            const_msg = torch.cat([constraints, const_loss / scalers, const_loss1 / scalers], dim=-1)
+            const_msg = torch.cat([constraints, const_loss / const_scaler, const_loss1 / const_scaler], dim=-1)
             const_tmp = self.constraint_update(const_msg)
             constraints = const_tmp[:, :self.feature_maps] + 0.5 * constraints
 
-            obj_query = self.make_query_objective(variables) # TODO: Use single MLP for queries
-            obj_loss = torch.sigmoid(obj_query) * obj_multipliers
-
-            # TODO: Experiment with mean
-            scalers = torch.sparse.sum(batch_holder.vars_const_graph, dim=-1).to_dense()
-            scalers = torch.unsqueeze(scalers, dim=-1)
-
             const2var_msg = torch.sparse.mm(batch_holder.vars_const_graph, const_tmp[:, self.feature_maps:])
 
-            var_msg = torch.cat([variables, const2var_msg / scalers, obj_loss, const_gradient, obj_multipliers], dim=-1)
+            var_msg = torch.cat([variables, const2var_msg / vars_scaler, obj_loss, const_gradient, obj_multipliers], dim=-1)
             variables = self.variable_update(var_msg) + 0.5 * variables
 
             out_vars = self.output(variables)
