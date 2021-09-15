@@ -67,15 +67,16 @@ class MIPNetwork(torch.nn.Module):
 
         for i in range(self.pass_steps):
             # TODO: Noise for queries
-            query = self.make_query(variables)
-            query = torch.sigmoid(query)
+            with torch.enable_grad():
+                query = self.make_query(variables)
+                query = torch.sigmoid(query)
 
-            left_side_value = torch.sparse.mm(batch_holder.vars_const_graph.t(), query)
-            const_loss = torch.relu(left_side_value - const_values)
-            const_loss1 = torch.relu(const_values - left_side_value)
+                left_side_value = torch.sparse.mm(batch_holder.vars_const_graph.t(), query)
+                const_loss = torch.relu(left_side_value - const_values)
+                const_loss1 = torch.relu(const_values - left_side_value)
 
-            obj_loss = query * obj_multipliers
-            const_gradient = torch.autograd.grad([const_loss.sum() + obj_loss.sum()], [query], retain_graph=True)[0]
+                obj_loss = query * obj_multipliers
+                const_gradient = torch.autograd.grad([const_loss.sum() + obj_loss.sum()], [query], retain_graph=True)[0]
 
             const_msg = torch.cat([constraints, const_loss / const_scaler, const_loss1 / const_scaler], dim=-1)
             const_tmp = self.constraint_update(const_msg)

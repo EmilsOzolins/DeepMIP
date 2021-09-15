@@ -3,12 +3,14 @@ import gzip
 import pickle
 from typing import List, Dict
 
+import torch
 from torch.utils.data import Dataset
 
 from data.datasets_base import MIPDataset
 from data.mip_instance import MIPInstance
 from metrics.general_metrics import Metrics
 from metrics.mip_metrics import MIPMetrics
+from utils.data import MIPBatchHolder
 
 
 class LoadBalancingDataset(MIPDataset, Dataset):
@@ -28,8 +30,11 @@ class LoadBalancingDataset(MIPDataset, Dataset):
     def train_metrics(self) -> List[Metrics]:
         return []
 
-    def decode_model_outputs(self, model_output):
-        return []
+    def decode_model_outputs(self, model_output, batch_holder: MIPBatchHolder):
+        output = torch.squeeze(model_output)
+        mask = batch_holder.integer_mask
+        inv_mask = 1 - mask
+        return torch.round(output * mask) + output * inv_mask
 
     def __getitem__(self, index: int) -> Dict:
         file_name = self._instances[index]
@@ -37,7 +42,8 @@ class LoadBalancingDataset(MIPDataset, Dataset):
         with gzip.open(file_name, mode="rb") as file:
             mip_instance: MIPInstance = pickle.load(file)
 
-        return {"mip": mip_instance}
+        return {"mip": mip_instance,
+                "optimal_solution": torch.as_tensor([float('nan')], dtype=torch.float32)}
 
     def __len__(self) -> int:
         return len(self._instances)

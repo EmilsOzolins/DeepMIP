@@ -1,4 +1,3 @@
-import math
 import random
 from abc import abstractmethod
 from typing import Iterator, Dict, List
@@ -12,6 +11,7 @@ from data.datasets_base import MIPDataset
 from data.mip_instance import MIPInstance
 from metrics.general_metrics import Metrics
 from metrics.mip_metrics import MIPMetrics
+from utils.data import MIPBatchHolder
 
 
 class BoundedKnapsackDataset(MIPDataset, IterableDataset):
@@ -91,7 +91,7 @@ class BoundedKnapsackDataset(MIPDataset, IterableDataset):
         return self._max_copies.bit_length()
 
     @abstractmethod
-    def decode_model_outputs(self, model_output):
+    def decode_model_outputs(self, model_output, batch_holder: MIPBatchHolder):
         pass
 
     @property
@@ -108,7 +108,7 @@ class BinaryKnapsackDataset(BoundedKnapsackDataset):
     def __init__(self, min_variables, max_variables, max_weight=20, max_values=20) -> None:
         super().__init__(min_variables, max_variables, max_copies=1, max_weight=max_weight, max_values=max_values)
 
-    def decode_model_outputs(self, model_output):
+    def decode_model_outputs(self, model_output, batch_holder: MIPBatchHolder):
         assignments = torch.round(model_output)
         return torch.squeeze(assignments)
 
