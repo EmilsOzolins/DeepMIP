@@ -48,7 +48,7 @@ def main():
     validation_dataloader = create_data_loader(val_dataset)
 
     network = MIPNetwork(
-        output_bits=train_dataset.required_output_bits,
+        output_bits=params.output_bits,
         feature_maps=params.feature_maps,
         pass_steps=params.recurrent_steps
     ).cuda()
@@ -129,7 +129,7 @@ def train(train_steps, network, optimizer, train_dataloader, dataset):
         total_loss_o = 0
         total_loss_c = 0
         for asn in outputs:
-            l, loss_c, loss_o = sum_loss(asn, batch_holder)
+            l, loss_c, loss_o, best_logit_map = sum_loss(asn, batch_holder)
             # l = combined_loss(asn, batch_holder)
             loss += l
             total_loss_o += loss_o
@@ -141,11 +141,12 @@ def train(train_steps, network, optimizer, train_dataloader, dataset):
         total_loss_c /= steps_taken
         loss /= steps_taken
 
-        prediction = dataset.decode_model_outputs(outputs[-1])
+        result = outputs[-1][:,best_logit_map:best_logit_map+1]
+        prediction = dataset.decode_model_outputs(result)
         loss_avg.update(loss=loss, loss_opt=total_loss_o, loss_const=total_loss_c)
-        metrics.update(prediction=prediction, batch_holder=batch_holder, logits=outputs[-1])
+        metrics.update(prediction=prediction, batch_holder=batch_holder, logits=result)
         summary.add_histogram("logits", logits, global_step)
-        summary.add_histogram("values", outputs[-1], global_step)
+        summary.add_histogram("values", result, global_step)
         global_step+=1
 
         loss.backward()
@@ -192,7 +193,7 @@ def sum_loss(asn, batch_holder):
     abs_graph = torch.sparse_coo_tensor(batch_holder.vars_const_graph.indices(), torch.abs(batch_holder.vars_const_graph.values()), size=batch_holder.vars_const_graph.size(), device=batch_holder.vars_const_graph.device)
     scalers1 = torch.sparse.sum(abs_graph, dim=0).to_dense()
     scalers2 = torch.sparse.sum(batch_holder.binary_vars_const_graph, dim=0).to_dense()
-    loss_c = loss_c * scalers2 / torch.maximum(scalers1, torch.ones_like(scalers1))
+    loss_c = loss_c * torch.unsqueeze(scalers2 / torch.maximum(scalers1, torch.ones_like(scalers1)), dim=-1)
 
     loss_c = torch.square(loss_c)
     loss_c = torch.sparse.mm(batch_holder.const_inst_graph.t(), loss_c)
@@ -203,9 +204,17 @@ def sum_loss(asn, batch_holder):
     ones_graph_o = torch.sparse_coo_tensor(batch_holder.vars_obj_graph.indices(), torch.ones_like(batch_holder.vars_obj_graph.values()), size=batch_holder.vars_obj_graph.size(),
                                           device=batch_holder.vars_obj_graph.device)
     scalers2_o = torch.sparse.sum(ones_graph_o, dim=0).to_dense()
-    loss_o_scaled = loss_o * scalers2_o / torch.maximum(scalers1_o, torch.ones_like(scalers1_o))
+    loss_o_scaled = loss_o * torch.unsqueeze(scalers2_o / torch.maximum(scalers1_o, torch.ones_like(scalers1_o)), dim=-1)
 
-    return torch.mean(loss_c + loss_o_scaled * 0.0001), torch.mean(loss_c), torch.mean(loss_o)
+    per_graph_loss = loss_c + loss_o_scaled * 0.0001
+    best_logit_map = torch.argmin(torch.sum(per_graph_loss, dim=0))
+
+    logit_maps = per_graph_loss.size()[-1]
+    costs = torch.square(torch.arange(1, logit_maps+1, dtype=torch.float32, device = per_graph_loss.device))
+    sorted_loss, _ = torch.sort(per_graph_loss, dim=-1, descending=True)
+    per_graph_loss_avg = torch.sum(sorted_loss * costs, dim=-1) / torch.sum(costs)
+
+    return torch.mean(per_graph_loss_avg), torch.mean(loss_c), torch.mean(loss_o), best_logit_map
 
 
 def create_data_loader(dataset):
@@ -237,8 +246,9 @@ def evaluate_model(network, test_dataloader, dataset, eval_iterations=None):
         batch_holder = MIPBatchHolder(batched_data, device)
 
         outputs, logits = network.forward(batch_holder, device)
+        l, loss_c, loss_o, best_logit_map = sum_loss(outputs[-1], batch_holder)
 
-        prediction = dataset.decode_model_outputs(outputs[-1])
+        prediction = dataset.decode_model_outputs(outputs[-1][:,best_logit_map:best_logit_map+1])
         metrics.update(prediction=prediction, batch_holder=batch_holder)
 
     return metrics.numpy_result

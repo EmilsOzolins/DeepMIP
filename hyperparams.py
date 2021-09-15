@@ -10,3 +10,4 @@ learning_rate = 0.0001
 # Model
 recurrent_steps = 8
 feature_maps = 128
+output_bits = 1
