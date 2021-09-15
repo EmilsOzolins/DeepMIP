@@ -15,8 +15,9 @@ from utils.data import MIPBatchHolder
 
 class LoadBalancingDataset(MIPDataset, Dataset):
 
-    def __init__(self, data_folder="/host-dir/mip_data/load_balancing/train") -> None:
+    def __init__(self, augment=False, data_folder="/host-dir/mip_data/load_balancing/train") -> None:
         self._instances = glob.glob(data_folder + "/*.pickle.gz")
+        self._should_augment = augment
 
     @property
     def required_output_bits(self):
@@ -42,7 +43,11 @@ class LoadBalancingDataset(MIPDataset, Dataset):
         with gzip.open(file_name, mode="rb") as file:
             mip_instance: MIPInstance = pickle.load(file)
 
-        return {"mip": mip_instance,
+        mip_instance._integer_indices = set()
+        mip_instance._drop_percentage = 0.05
+        mip_instance._fix_percentage = 0.05
+        mip_instance._augment_steps = 10
+        return {"mip": mip_instance.augment() if self._should_augment else mip_instance,
                 "optimal_solution": torch.as_tensor([float('nan')], dtype=torch.float32)}
 
     def __len__(self) -> int:
