@@ -4,20 +4,22 @@ import torch.nn as nn
 from model.normalization import NodeNorm, PairNorm
 from utils.data import MIPBatchHolder
 
+
 def sample_triangular(shape):
     sample1 = torch.rand(shape).cuda()
     sample2 = torch.rand(shape).cuda()
-    return sample1+sample2
+    return sample1 + sample2
+
 
 class MIPNetwork(torch.nn.Module):
 
-    def __init__(self, output_bits, feature_maps=64, pass_steps=3, summary = None):
+    def __init__(self, output_bits, feature_maps=64, pass_steps=3, summary=None):
         super().__init__()
 
         self.feature_maps = feature_maps
         self.pass_steps = pass_steps
         self.summary = summary
-        self.global_step=0
+        self.global_step = 0
 
         self.constraint_update = nn.Sequential(
             nn.Linear(self.feature_maps * 3, self.feature_maps),
@@ -27,7 +29,7 @@ class MIPNetwork(torch.nn.Module):
         )
 
         self.make_query = nn.Sequential(
-            nn.Linear(self.feature_maps+4, self.feature_maps),
+            nn.Linear(self.feature_maps + 4, self.feature_maps),
             nn.ReLU(),
             nn.Linear(self.feature_maps, self.feature_maps),
         )
@@ -74,7 +76,7 @@ class MIPNetwork(torch.nn.Module):
 
         for i in range(self.pass_steps):
             with torch.enable_grad():
-                var_noisy = torch.cat([variables, self.noise.sample([var_count,4]).cuda()], dim=-1)
+                var_noisy = torch.cat([variables, self.noise.sample([var_count, 4]).cuda()], dim=-1)
                 query = self.make_query(var_noisy)
                 query = torch.sigmoid(query)
 
@@ -83,9 +85,9 @@ class MIPNetwork(torch.nn.Module):
                 const_loss = torch.relu(left_side_value)
                 const_loss1 = torch.relu(-left_side_value)
 
-                #obj_loss = query * obj_multipliers
-                const_gradient = 10*torch.autograd.grad([const_loss.sum()], [query], retain_graph=True)[0]
-                #const_gradient1 = torch.autograd.grad([const_loss1.sum()], [query], retain_graph=True)[0]
+                # obj_loss = query * obj_multipliers
+                const_gradient = 10 * torch.autograd.grad([const_loss.sum()], [query], retain_graph=True)[0]
+                # const_gradient1 = torch.autograd.grad([const_loss1.sum()], [query], retain_graph=True)[0]
 
             const_msg = torch.cat([constraints, const_loss, const_loss1], dim=-1)
             const_tmp = self.constraint_update(const_msg)
@@ -97,16 +99,16 @@ class MIPNetwork(torch.nn.Module):
             variables = self.variable_update(var_msg) + 0.5 * variables
 
             out_vars = self.output(variables)
-            #int_noise = self.noise.sample(out_vars.size()).cuda()
+            # int_noise = self.noise.sample(out_vars.size()).cuda()
             int_noise = sample_triangular(out_vars.size())
 
             # Noise is not applied to variables that doesn't have integer constraint
-            masked_int_noise = 1.5 * int_noise * torch.unsqueeze(batch_holder.integer_mask, dim=-1)
+            int_mask = torch.unsqueeze(batch_holder.integer_mask, dim=-1)
 
             if self.training:
-                out_vars += masked_int_noise
+                out_vars += 1.5 * int_noise * int_mask
 
-            out = torch.sigmoid(out_vars)
+            out = torch.sigmoid(out_vars) * int_mask + out_vars * (1 - int_mask)
             outputs.append(out)
 
             constraints = constraints.detach() * 0.2 + constraints * 0.8

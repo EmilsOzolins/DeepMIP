@@ -1,8 +1,9 @@
 import itertools
 import os
 import time
-import numpy as np
+from datetime import datetime as dt
 
+import numpy as np
 import torch.sparse
 from torch.utils.data import DataLoader, IterableDataset
 from torch.utils.tensorboard import SummaryWriter
@@ -10,13 +11,11 @@ from torch.utils.tensorboard import SummaryWriter
 import config
 import hyperparams as params
 from data.kanapsack import BinaryKnapsackDataset
-from data.load_balancing import LoadBalancingDataset
 from metrics.discrete_metrics import DiscretizationMetrics
 from metrics.general_metrics import AverageMetrics, MetricsHandler
 from model.mip_network import MIPNetwork
 from utils.data import batch_data, MIPBatchHolder
 from utils.visualize import format_metrics
-from datetime import datetime as dt
 
 now = dt.now()
 run_directory = config.model_dir + "/" + now.strftime("%Y%m%d-%H%M%S")
@@ -49,6 +48,9 @@ def main():
     # train_dataset = LoadBalancingDataset("/host-dir/mip_data/item_placement/train")
     # val_dataset = LoadBalancingDataset("/host-dir/mip_data/item_placement/valid")
 
+    # train_dataset = ItemPlacementDataset("/host-dir/mip_data/load_balancing/train")
+    # val_dataset = ItemPlacementDataset("/host-dir/mip_data/load_balancing/valid")
+
     train_dataloader = create_data_loader(train_dataset)
     validation_dataloader = create_data_loader(val_dataset)
 
@@ -56,7 +58,7 @@ def main():
         output_bits=params.output_bits,
         feature_maps=params.feature_maps,
         pass_steps=params.recurrent_steps,
-        summary = summary
+        summary=summary
     ).cuda()
     optimizer = torch.optim.Adam(network.parameters(), lr=params.learning_rate)
 
@@ -211,7 +213,7 @@ def sum_loss(asn, batch_holder):
 
     loss_c = torch.square(loss_c)
     loss_c = torch.sparse.mm(batch_holder.const_inst_graph.t(), loss_c)
-    #loss_c += torch.mean(bounds_loss_0) + torch.mean(bounds_loss_1)  # todo correct per graph loss
+    # loss_c += torch.mean(bounds_loss_0) + torch.mean(bounds_loss_1)  # todo correct per graph loss
     loss_c = torch.sqrt(loss_c + 1e-6) - np.sqrt(1e-6)
     loss_o = torch.sparse.mm(batch_holder.vars_obj_graph.t(), asn)
     abs_graph_o = torch.sparse_coo_tensor(batch_holder.vars_obj_graph.indices(),
@@ -224,8 +226,7 @@ def sum_loss(asn, batch_holder):
                                            size=batch_holder.vars_obj_graph.size(),
                                            device=batch_holder.vars_obj_graph.device)
     scalers2_o = torch.sparse.sum(ones_graph_o, dim=0).to_dense()
-    loss_o_scaled = loss_o * torch.unsqueeze(scalers2_o / torch.maximum(scalers1_o, torch.ones_like(scalers1_o)),
-                                             dim=-1)
+    loss_o_scaled = loss_o * torch.unsqueeze(scalers2_o / torch.maximum(scalers1_o, torch.ones_like(scalers1_o)),dim=-1)
 
     per_graph_loss = loss_c + loss_o_scaled*0.03
     best_logit_map = torch.argmin(torch.sum(per_graph_loss, dim=0))
