@@ -35,7 +35,11 @@ class BoundedKnapsackDataset(MIPDataset, IterableDataset):
                 var_count = random.randint(self._min_variables, self._max_variables)
                 var_indices = [i for i in range(var_count)]
                 weights = [random.randint(1, self._max_weight) for _ in var_indices]
-                values = [random.randint(0, self._max_values) for _ in var_indices]
+
+                values = [0] * len(var_indices)
+                while sum(values) == 0:
+                    values = [random.randint(0, self._max_values) for _ in var_indices]
+
                 copies = [random.randint(1, self._max_copies) for _ in var_indices]
 
                 max_weight = sum([w * c for w, c in zip(weights, copies)])
@@ -155,7 +159,8 @@ class ConstrainedBinaryKnapsackDataset(BinaryKnapsackDataset):
                     # Don't include solutions that can be obtained from LP by rounding variables
                     continue
 
-                yield {"mip": self.convert_to_mip_thr(var_indices, weights, values, copies, capacity, solution-self.suboptimality),
+                yield {"mip": self.convert_to_mip_thr(var_indices, weights, values, copies, capacity,
+                                                      solution - self.suboptimality),
                        "optimal_solution": torch.as_tensor([solution], dtype=torch.float32)}
 
         return generator()
@@ -168,7 +173,6 @@ class ConstrainedBinaryKnapsackDataset(BinaryKnapsackDataset):
         ip = ip.integer_constraint(var_indices)
 
         return ip
-
 
 # TODO: Unbounded Knapsack dataset
 
