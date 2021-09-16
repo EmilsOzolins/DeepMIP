@@ -195,3 +195,11 @@ class MIPBatchHolder:
         data = [x.to(device=self._device) if isinstance(x, torch.Tensor) else x for x in data]
 
         return data if len(data) > 1 else data[0]
+
+# absolute value of a sparse tensor
+def sparse_abs(vars_obj_graph):
+    abs_graph = torch.sparse_coo_tensor(vars_obj_graph.indices(),
+                                          torch.abs(vars_obj_graph.values()),
+                                          size=vars_obj_graph.size(),
+                                          device=vars_obj_graph.device)
+    return abs_graph

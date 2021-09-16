@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 
 from model.normalization import NodeNorm, PairNorm
-from utils.data import MIPBatchHolder
+from utils.data import MIPBatchHolder, sparse_abs
 
 
 def sample_triangular(shape):
@@ -64,14 +64,16 @@ class MIPNetwork(torch.nn.Module):
 
         const_values = torch.unsqueeze(batch_holder.const_values, dim=-1)
         obj_multipliers = torch.unsqueeze(batch_holder.objective_multipliers, dim=-1)
-        obj_multipliers /= torch.mean(torch.abs(obj_multipliers))
+        obj_multipliers /= torch.mean(torch.abs(obj_multipliers))+1e-6
+
+        abs_graph = sparse_abs(batch_holder.vars_const_graph)
 
         # TODO: Experiment with mean
-        const_scaler = torch.sparse.sum(batch_holder.vars_const_graph, dim=0).to_dense()
+        const_scaler = torch.sparse.sum(abs_graph, dim=0).to_dense() + 1e-6
         const_scaler = torch.unsqueeze(const_scaler, dim=-1)
 
         # TODO: Experiment with mean
-        vars_scaler = torch.sparse.sum(batch_holder.vars_const_graph, dim=-1).to_dense()
+        vars_scaler = torch.sparse.sum(abs_graph, dim=-1).to_dense() + 1e-6
         vars_scaler = torch.unsqueeze(vars_scaler, dim=-1)
 
         for i in range(self.pass_steps):

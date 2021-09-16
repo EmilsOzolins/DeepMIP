@@ -10,7 +10,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 import config
 import hyperparams as params
-from data.kanapsack import BinaryKnapsackDataset
+from data.kanapsack import BinaryKnapsackDataset, ConstrainedBinaryKnapsackDataset
 from metrics.discrete_metrics import DiscretizationMetrics
 from metrics.general_metrics import AverageMetrics, MetricsHandler
 from model.mip_network import MIPNetwork
@@ -41,9 +41,13 @@ def main():
     # train_dataset = IntegerSudokuDataset(sudoku_train_data)
     # val_dataset = IntegerSudokuDataset(sudoku_val_data)
     #
-    test_dataset = BinaryKnapsackDataset(2, 20)
-    train_dataset = BinaryKnapsackDataset(2, 20)
-    val_dataset = BinaryKnapsackDataset(2, 20)
+    # test_dataset = BinaryKnapsackDataset(2, 20)
+    # train_dataset = BinaryKnapsackDataset(2, 20)
+    # val_dataset = BinaryKnapsackDataset(2, 20)
+
+    test_dataset = ConstrainedBinaryKnapsackDataset(2, 20)
+    train_dataset = ConstrainedBinaryKnapsackDataset(2, 20)
+    val_dataset = ConstrainedBinaryKnapsackDataset(2, 20)
 
     # train_dataset = LoadBalancingDataset("/host-dir/mip_data/item_placement/train")
     # val_dataset = LoadBalancingDataset("/host-dir/mip_data/item_placement/valid")
@@ -195,7 +199,7 @@ def combined_loss(asn, batch_holder):
     return torch.mean(graph_loss)
 
 
-def sum_loss(asn, batch_holder):
+def sum_loss_scaled(asn, batch_holder):
     eps = 1e-2  # TODO. Also eps in validation because there cn be equality constraints
     left_side = torch.sparse.mm(batch_holder.vars_const_graph.t(), asn)
     loss_c = torch.relu(eps + left_side - torch.unsqueeze(batch_holder.const_values, dim=-1))
@@ -229,6 +233,24 @@ def sum_loss(asn, batch_holder):
     loss_o_scaled = loss_o * torch.unsqueeze(scalers2_o / torch.maximum(scalers1_o, torch.ones_like(scalers1_o)),dim=-1)
 
     per_graph_loss = loss_c + loss_o_scaled*0.03
+    best_logit_map = torch.argmin(torch.sum(per_graph_loss, dim=0))
+
+    logit_maps = per_graph_loss.size()[-1]
+    costs = torch.square(torch.arange(1, logit_maps + 1, dtype=torch.float32, device=per_graph_loss.device))
+    sorted_loss, _ = torch.sort(per_graph_loss, dim=-1, descending=True)
+    per_graph_loss_avg = torch.sum(sorted_loss * costs, dim=-1) / torch.sum(costs)
+
+    return torch.mean(per_graph_loss_avg), torch.mean(loss_c), torch.mean(loss_o), best_logit_map
+
+def sum_loss(asn, batch_holder):
+    eps = 1e-2  # TODO. Also eps in validation because there cn be equality constraints
+    left_side = torch.sparse.mm(batch_holder.vars_const_graph.t(), asn)
+    loss_c = torch.relu(eps + left_side - torch.unsqueeze(batch_holder.const_values, dim=-1))
+    loss_c = torch.square(loss_c)
+    loss_c = torch.sparse.mm(batch_holder.const_inst_graph.t(), loss_c)
+    loss_c = torch.sqrt(loss_c + 1e-6) - np.sqrt(1e-6)
+    loss_o = torch.sparse.mm(batch_holder.vars_obj_graph.t(), asn)
+    per_graph_loss = loss_c + loss_o*0.03
     best_logit_map = torch.argmin(torch.sum(per_graph_loss, dim=0))
 
     logit_maps = per_graph_loss.size()[-1]

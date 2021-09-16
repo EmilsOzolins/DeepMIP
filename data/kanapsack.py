@@ -136,7 +136,7 @@ class BinaryKnapsackDataset(BoundedKnapsackDataset):
 class ConstrainedBinaryKnapsackDataset(BinaryKnapsackDataset):
 
     def __init__(self, min_variables, max_variables, max_weight=20, max_values=20) -> None:
-        self.suboptimality = 0.1
+        self.suboptimality = 10
         super().__init__(min_variables, max_variables, max_weight=max_weight, max_values=max_values)
 
     def __iter__(self) -> Iterator[Dict]:
@@ -161,7 +161,7 @@ class ConstrainedBinaryKnapsackDataset(BinaryKnapsackDataset):
 
                 yield {"mip": self.convert_to_mip_thr(var_indices, weights, values, copies, capacity,
                                                       solution - self.suboptimality),
-                       "optimal_solution": torch.as_tensor([solution], dtype=torch.float32)}
+                       "optimal_solution": torch.as_tensor([0.], dtype=torch.float32)}
 
         return generator()
 
@@ -169,7 +169,7 @@ class ConstrainedBinaryKnapsackDataset(BinaryKnapsackDataset):
         ip = MIPInstance(len(var_indices))
 
         ip = ip.less_or_equal(var_indices, weights, capacity)
-        ip = ip.greater_or_equal(var_indices, weights, objective_threshold)
+        ip = ip.greater_or_equal(var_indices, values, objective_threshold)
         ip = ip.integer_constraint(var_indices)
 
         return ip
