@@ -18,7 +18,7 @@ from utils.visualize import format_metrics
 from datetime import datetime as dt
 
 now = dt.now()
-run_directory = config.model_dir + "/" + now.strftime("%H:%M:%S_%d_%m")
+run_directory = config.model_dir + "/" + now.strftime("%Y%m%d-%H%M%S")
 summary = SummaryWriter(run_directory)
 global_step = 0
 
@@ -50,7 +50,8 @@ def main():
     network = MIPNetwork(
         output_bits=params.output_bits,
         feature_maps=params.feature_maps,
-        pass_steps=params.recurrent_steps
+        pass_steps=params.recurrent_steps,
+        summary = summary
     ).cuda()
     optimizer = torch.optim.Adam(network.parameters(), lr=params.learning_rate)
 
@@ -122,6 +123,7 @@ def train(train_steps, network, optimizer, train_dataloader, dataset):
         batch_holder = MIPBatchHolder(batched_data, device)
 
         optimizer.zero_grad(set_to_none=True)
+        network.global_step = global_step
         outputs, logits = network.forward(batch_holder, device)
 
         # TODO: Deal with this loss garbage
@@ -194,9 +196,12 @@ def sum_loss(asn, batch_holder):
     scalers1 = torch.sparse.sum(abs_graph, dim=0).to_dense()
     scalers2 = torch.sparse.sum(batch_holder.binary_vars_const_graph, dim=0).to_dense()
     loss_c = loss_c * torch.unsqueeze(scalers2 / torch.maximum(scalers1, torch.ones_like(scalers1)), dim=-1)
+    # bounds_loss_0 = torch.square(torch.relu(-asn))
+    # bounds_loss_1 = torch.square(torch.relu(asn-1))
 
     loss_c = torch.square(loss_c)
     loss_c = torch.sparse.mm(batch_holder.const_inst_graph.t(), loss_c)
+    #loss_c += torch.mean(bounds_loss_0) + torch.mean(bounds_loss_1)  # todo correct per graph loss
     loss_c = torch.sqrt(loss_c + 1e-6) - np.sqrt(1e-6)
     loss_o = torch.sparse.mm(batch_holder.vars_obj_graph.t(), asn)
     abs_graph_o = torch.sparse_coo_tensor(batch_holder.vars_obj_graph.indices(), torch.abs(batch_holder.vars_obj_graph.values()), size=batch_holder.vars_obj_graph.size(), device=batch_holder.vars_obj_graph.device)
@@ -206,7 +211,7 @@ def sum_loss(asn, batch_holder):
     scalers2_o = torch.sparse.sum(ones_graph_o, dim=0).to_dense()
     loss_o_scaled = loss_o * torch.unsqueeze(scalers2_o / torch.maximum(scalers1_o, torch.ones_like(scalers1_o)), dim=-1)
 
-    per_graph_loss = loss_c + loss_o_scaled * 0.0001
+    per_graph_loss = loss_c + loss_o_scaled*0.001
     best_logit_map = torch.argmin(torch.sum(per_graph_loss, dim=0))
 
     logit_maps = per_graph_loss.size()[-1]
