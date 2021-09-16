@@ -68,18 +68,19 @@ class MIPNetwork(torch.nn.Module):
         vars_scaler = torch.unsqueeze(vars_scaler, dim=-1)
 
         for i in range(self.pass_steps):
-            var_noisy = torch.cat([variables, self.noise.sample([var_count,4]).cuda()], dim=-1)
-            query = self.make_query(var_noisy)
-            query = torch.sigmoid(query)
+            with torch.enable_grad():
+                var_noisy = torch.cat([variables, self.noise.sample([var_count,4]).cuda()], dim=-1)
+                query = self.make_query(var_noisy)
+                query = torch.sigmoid(query)
 
-            left_side_value = torch.sparse.mm(batch_holder.vars_const_graph.t(), query)
-            left_side_value = (left_side_value - const_values) / const_scaler
-            const_loss = torch.relu(left_side_value)
-            const_loss1 = torch.relu(-left_side_value)
+                left_side_value = torch.sparse.mm(batch_holder.vars_const_graph.t(), query)
+                left_side_value = (left_side_value - const_values) / const_scaler
+                const_loss = torch.relu(left_side_value)
+                const_loss1 = torch.relu(-left_side_value)
 
-            #obj_loss = query * obj_multipliers
-            const_gradient = 10*torch.autograd.grad([const_loss.sum()], [query], retain_graph=True)[0]
-            #const_gradient1 = torch.autograd.grad([const_loss1.sum()], [query], retain_graph=True)[0]
+                #obj_loss = query * obj_multipliers
+                const_gradient = 10*torch.autograd.grad([const_loss.sum()], [query], retain_graph=True)[0]
+                #const_gradient1 = torch.autograd.grad([const_loss1.sum()], [query], retain_graph=True)[0]
 
             const_msg = torch.cat([constraints, const_loss, const_loss1], dim=-1)
             const_tmp = self.constraint_update(const_msg)

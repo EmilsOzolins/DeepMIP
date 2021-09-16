@@ -10,6 +10,7 @@ from torch.utils.tensorboard import SummaryWriter
 import config
 import hyperparams as params
 from data.kanapsack import BinaryKnapsackDataset
+from data.load_balancing import LoadBalancingDataset
 from metrics.discrete_metrics import DiscretizationMetrics
 from metrics.general_metrics import AverageMetrics, MetricsHandler
 from model.mip_network import MIPNetwork
@@ -21,6 +22,7 @@ now = dt.now()
 run_directory = config.model_dir + "/" + now.strftime("%Y%m%d-%H%M%S")
 summary = SummaryWriter(run_directory)
 global_step = 0
+
 
 def main():
     # experiment = Experiment(disabled=True)  # Set to True to disable logging in comet.ml
@@ -39,10 +41,13 @@ def main():
     # test_dataset = IntegerSudokuDataset(sudoku_test_data)
     # train_dataset = IntegerSudokuDataset(sudoku_train_data)
     # val_dataset = IntegerSudokuDataset(sudoku_val_data)
-
+    #
     test_dataset = BinaryKnapsackDataset(2, 20)
     train_dataset = BinaryKnapsackDataset(2, 20)
     val_dataset = BinaryKnapsackDataset(2, 20)
+
+    # train_dataset = LoadBalancingDataset("/host-dir/mip_data/item_placement/train")
+    # val_dataset = LoadBalancingDataset("/host-dir/mip_data/item_placement/valid")
 
     train_dataloader = create_data_loader(train_dataset)
     validation_dataloader = create_data_loader(val_dataset)
@@ -88,8 +93,8 @@ def main():
 
         # with experiment.validate():
         network.eval()
-        torch.no_grad()
-        results = evaluate_model(network, validation_dataloader, val_dataset, eval_iterations=100)
+        with torch.no_grad():
+            results = evaluate_model(network, validation_dataloader, val_dataset, eval_iterations=100)
 
         print(format_metrics("val", current_step, results))
         # experiment.log_metrics(results)
@@ -143,13 +148,13 @@ def train(train_steps, network, optimizer, train_dataloader, dataset):
         total_loss_c /= steps_taken
         loss /= steps_taken
 
-        result = outputs[-1][:,best_logit_map:best_logit_map+1]
-        prediction = dataset.decode_model_outputs(result)
+        result = outputs[-1][:, best_logit_map:best_logit_map + 1]
+        prediction = dataset.decode_model_outputs(result, batch_holder)
         loss_avg.update(loss=loss, loss_opt=total_loss_o, loss_const=total_loss_c)
         metrics.update(prediction=prediction, batch_holder=batch_holder, logits=result)
         summary.add_histogram("logits", logits, global_step)
         summary.add_histogram("values", result, global_step)
-        global_step+=1
+        global_step += 1
 
         loss.backward()
         optimizer.step()
@@ -187,12 +192,15 @@ def combined_loss(asn, batch_holder):
 
 
 def sum_loss(asn, batch_holder):
-    eps = 1e-2# TODO. Also eps in validation because there cn be equality constraints
+    eps = 1e-2  # TODO. Also eps in validation because there cn be equality constraints
     left_side = torch.sparse.mm(batch_holder.vars_const_graph.t(), asn)
-    loss_c = torch.relu(eps+left_side - torch.unsqueeze(batch_holder.const_values, dim=-1))
+    loss_c = torch.relu(eps + left_side - torch.unsqueeze(batch_holder.const_values, dim=-1))
 
     # todo: nicer
-    abs_graph = torch.sparse_coo_tensor(batch_holder.vars_const_graph.indices(), torch.abs(batch_holder.vars_const_graph.values()), size=batch_holder.vars_const_graph.size(), device=batch_holder.vars_const_graph.device)
+    abs_graph = torch.sparse_coo_tensor(batch_holder.vars_const_graph.indices(),
+                                        torch.abs(batch_holder.vars_const_graph.values()),
+                                        size=batch_holder.vars_const_graph.size(),
+                                        device=batch_holder.vars_const_graph.device)
     scalers1 = torch.sparse.sum(abs_graph, dim=0).to_dense()
     scalers2 = torch.sparse.sum(batch_holder.binary_vars_const_graph, dim=0).to_dense()
     loss_c = loss_c * torch.unsqueeze(scalers2 / torch.maximum(scalers1, torch.ones_like(scalers1)), dim=-1)
@@ -204,18 +212,24 @@ def sum_loss(asn, batch_holder):
     #loss_c += torch.mean(bounds_loss_0) + torch.mean(bounds_loss_1)  # todo correct per graph loss
     loss_c = torch.sqrt(loss_c + 1e-6) - np.sqrt(1e-6)
     loss_o = torch.sparse.mm(batch_holder.vars_obj_graph.t(), asn)
-    abs_graph_o = torch.sparse_coo_tensor(batch_holder.vars_obj_graph.indices(), torch.abs(batch_holder.vars_obj_graph.values()), size=batch_holder.vars_obj_graph.size(), device=batch_holder.vars_obj_graph.device)
-    scalers1_o = torch.sparse.sum(abs_graph_o, dim=0).to_dense()
-    ones_graph_o = torch.sparse_coo_tensor(batch_holder.vars_obj_graph.indices(), torch.ones_like(batch_holder.vars_obj_graph.values()), size=batch_holder.vars_obj_graph.size(),
+    abs_graph_o = torch.sparse_coo_tensor(batch_holder.vars_obj_graph.indices(),
+                                          torch.abs(batch_holder.vars_obj_graph.values()),
+                                          size=batch_holder.vars_obj_graph.size(),
                                           device=batch_holder.vars_obj_graph.device)
+    scalers1_o = torch.sparse.sum(abs_graph_o, dim=0).to_dense()
+    ones_graph_o = torch.sparse_coo_tensor(batch_holder.vars_obj_graph.indices(),
+                                           torch.ones_like(batch_holder.vars_obj_graph.values()),
+                                           size=batch_holder.vars_obj_graph.size(),
+                                           device=batch_holder.vars_obj_graph.device)
     scalers2_o = torch.sparse.sum(ones_graph_o, dim=0).to_dense()
-    loss_o_scaled = loss_o * torch.unsqueeze(scalers2_o / torch.maximum(scalers1_o, torch.ones_like(scalers1_o)), dim=-1)
+    loss_o_scaled = loss_o * torch.unsqueeze(scalers2_o / torch.maximum(scalers1_o, torch.ones_like(scalers1_o)),
+                                             dim=-1)
 
     per_graph_loss = loss_c + loss_o_scaled*0.001
     best_logit_map = torch.argmin(torch.sum(per_graph_loss, dim=0))
 
     logit_maps = per_graph_loss.size()[-1]
-    costs = torch.square(torch.arange(1, logit_maps+1, dtype=torch.float32, device = per_graph_loss.device))
+    costs = torch.square(torch.arange(1, logit_maps + 1, dtype=torch.float32, device=per_graph_loss.device))
     sorted_loss, _ = torch.sort(per_graph_loss, dim=-1, descending=True)
     per_graph_loss_avg = torch.sum(sorted_loss * costs, dim=-1) / torch.sum(costs)
 
@@ -253,7 +267,7 @@ def evaluate_model(network, test_dataloader, dataset, eval_iterations=None):
         outputs, logits = network.forward(batch_holder, device)
         l, loss_c, loss_o, best_logit_map = sum_loss(outputs[-1], batch_holder)
 
-        prediction = dataset.decode_model_outputs(outputs[-1][:,best_logit_map:best_logit_map+1])
+        prediction = dataset.decode_model_outputs(outputs[-1][:, best_logit_map:best_logit_map + 1], batch_holder)
         metrics.update(prediction=prediction, batch_holder=batch_holder)
 
     return metrics.numpy_result

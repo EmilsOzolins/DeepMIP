@@ -92,8 +92,8 @@ class MIPInstance:
             raise ValueError("Objective already set, can't set it second time!")
 
         self._objective_set = True
-        self._objective_indices += variable_indices
-        self._objective_multipliers += variable_multipliers
+        self._objective_indices = variable_indices
+        self._objective_multipliers = variable_multipliers
         return self
 
     def maximize_objective(self, variable_indices: List[int], variable_multipliers: List[float]):

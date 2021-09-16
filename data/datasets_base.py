@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from typing import List
 
 from metrics.general_metrics import Metrics
+from utils.data import MIPBatchHolder
 
 
 class MIPDataset(ABC):
@@ -22,5 +23,5 @@ class MIPDataset(ABC):
         pass
 
     @abstractmethod
-    def decode_model_outputs(self, model_output):
+    def decode_model_outputs(self, model_output, batch_holder: MIPBatchHolder):
         pass
