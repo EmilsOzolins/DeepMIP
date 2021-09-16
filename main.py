@@ -147,6 +147,8 @@ def train(train_steps, network, optimizer, train_dataloader, dataset):
         total_loss_o /= steps_taken
         total_loss_c /= steps_taken
         loss /= steps_taken
+        # regul_loss = torch.mean(torch.square(logits))
+        # loss += regul_loss*1e-5 #todo only for sigmoid vars
 
         result = outputs[-1][:, best_logit_map:best_logit_map + 1]
         prediction = dataset.decode_model_outputs(result, batch_holder)
@@ -225,7 +227,7 @@ def sum_loss(asn, batch_holder):
     loss_o_scaled = loss_o * torch.unsqueeze(scalers2_o / torch.maximum(scalers1_o, torch.ones_like(scalers1_o)),
                                              dim=-1)
 
-    per_graph_loss = loss_c + loss_o_scaled*0.001
+    per_graph_loss = loss_c + loss_o_scaled*0.03
     best_logit_map = torch.argmin(torch.sum(per_graph_loss, dim=0))
 
     logit_maps = per_graph_loss.size()[-1]

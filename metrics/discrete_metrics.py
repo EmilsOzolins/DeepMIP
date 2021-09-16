@@ -10,8 +10,7 @@ class DiscretizationMetrics(StackableMetrics):
 
     def update(self, logits: torch.Tensor, **kwargs) -> None:
         self._avg.update(
-            discrete_vs_continuous=self._discrete_vs_continuous(logits),
-            discrete_variables=self._count_discrete_variables(logits),
+            discrete_fraction=self._discrete_vs_continuous(logits),
             max_diff_to_discrete=self._max_diff_to_discrete(logits),
         )
 

@@ -4,6 +4,11 @@ import torch.nn as nn
 from model.normalization import NodeNorm, PairNorm
 from utils.data import MIPBatchHolder
 
+def sample_triangular(shape):
+    sample1 = torch.rand(shape).cuda()
+    sample2 = torch.rand(shape).cuda()
+    return sample1+sample2
+
 class MIPNetwork(torch.nn.Module):
 
     def __init__(self, output_bits, feature_maps=64, pass_steps=3, summary = None):
@@ -92,10 +97,11 @@ class MIPNetwork(torch.nn.Module):
             variables = self.variable_update(var_msg) + 0.5 * variables
 
             out_vars = self.output(variables)
-            int_noise = self.noise.sample(out_vars.size()).cuda()
+            #int_noise = self.noise.sample(out_vars.size()).cuda()
+            int_noise = sample_triangular(out_vars.size())
 
             # Noise is not applied to variables that doesn't have integer constraint
-            masked_int_noise = 0.5 * int_noise * torch.unsqueeze(batch_holder.integer_mask, dim=-1)
+            masked_int_noise = 1.5 * int_noise * torch.unsqueeze(batch_holder.integer_mask, dim=-1)
 
             if self.training:
                 out_vars += masked_int_noise

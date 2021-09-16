@@ -24,8 +24,8 @@ class MIPMetrics(StackableMetrics):
 
         mean_optimality_gap = self._mean_optimality_gap(vars_obj_graph, opt_value, prediction)
         max_optimality_gap = self._max_optimality_gap(vars_obj_graph, opt_value, prediction)
-        median_optimality_gap = self._median_optimality_gap(vars_obj_graph, opt_value, prediction)
-        quantile_075_gap = self._quantile_optimality_gap(0.75, vars_obj_graph, opt_value, prediction)
+        #median_optimality_gap = self._median_optimality_gap(vars_obj_graph, opt_value, prediction)
+        #quantile_075_gap = self._quantile_optimality_gap(0.75, vars_obj_graph, opt_value, prediction)
 
         found_optimum = self._found_optimum(vars_obj_graph, opt_value, prediction)
         fully_solved = self._totally_solved(vars_const_graph, const_inst_graph,
@@ -36,8 +36,6 @@ class MIPMetrics(StackableMetrics):
             fully_satisfied_instances=fully_sat_mips,
             mean_optimality_gap=mean_optimality_gap,
             max_optimality_gap=max_optimality_gap,
-            quantile_0_5_opt_gap=median_optimality_gap,
-            quantile_0_75_opt_gap=quantile_075_gap,
             optimum_found=found_optimum,
             fully_solved=fully_solved,
             max_violation = max_violation
@@ -137,3 +135,21 @@ class MIPMetrics(StackableMetrics):
         sat_instances = torch.eq(torch.squeeze(sat_in_inst), constraint_count)
 
         return sat_instances
+
+class MIPMetrics_train(MIPMetrics):
+    def __init__(self) -> None:
+        super().__init__()
+        self._avg = AverageMetrics()
+
+    def update(self, prediction: torch.Tensor, batch_holder: MIPBatchHolder, **kwargs):
+        logits = kwargs['logits'][:,0]
+
+        vars_const_graph = batch_holder.vars_const_graph
+        const_values = batch_holder.const_values
+
+        max_violation = self._max_constraints(logits, vars_const_graph, const_values)
+
+        self._avg.update(
+            max_violation = max_violation
+        )
+

@@ -10,7 +10,7 @@ from torch.utils.data import IterableDataset
 from data.datasets_base import MIPDataset
 from data.mip_instance import MIPInstance
 from metrics.general_metrics import Metrics
-from metrics.mip_metrics import MIPMetrics
+from metrics.mip_metrics import MIPMetrics, MIPMetrics_train
 from utils.data import MIPBatchHolder
 
 
@@ -100,7 +100,7 @@ class BoundedKnapsackDataset(MIPDataset, IterableDataset):
 
     @property
     def train_metrics(self) -> List[Metrics]:
-        return []
+        return [MIPMetrics_train()]
 
 
 class BinaryKnapsackDataset(BoundedKnapsackDataset):
@@ -127,6 +127,48 @@ class BinaryKnapsackDataset(BoundedKnapsackDataset):
         ip = ip.integer_constraint(var_indices)
 
         return ip
+
+
+class ConstrainedBinaryKnapsackDataset(BinaryKnapsackDataset):
+
+    def __init__(self, min_variables, max_variables, max_weight=20, max_values=20) -> None:
+        self.suboptimality = 0.1
+        super().__init__(min_variables, max_variables, max_weight=max_weight, max_values=max_values)
+
+    def __iter__(self) -> Iterator[Dict]:
+        def generator():
+            while True:
+                var_count = random.randint(self._min_variables, self._max_variables)
+                var_indices = [i for i in range(var_count)]
+                weights = [random.randint(1, self._max_weight) for _ in var_indices]
+                values = [random.randint(0, self._max_values) for _ in var_indices]
+                copies = [random.randint(1, self._max_copies) for _ in var_indices]
+
+                max_weight = sum([w * c for w, c in zip(weights, copies)])
+                min_weight = min(weights)
+                capacity = random.randint(min_weight, max_weight)
+
+                relaxed_int = self.relaxed_solutions(var_indices, weights, values, capacity)
+                solution = self.get_optimal_value(weights, values, [capacity])
+
+                if relaxed_int == solution:
+                    # Don't include solutions that can be obtained from LP by rounding variables
+                    continue
+
+                yield {"mip": self.convert_to_mip_thr(var_indices, weights, values, copies, capacity, solution-self.suboptimality),
+                       "optimal_solution": torch.as_tensor([solution], dtype=torch.float32)}
+
+        return generator()
+
+    def convert_to_mip_thr(self, var_indices, weights, values, copies, capacity, objective_threshold):
+        ip = MIPInstance(len(var_indices))
+
+        ip = ip.less_or_equal(var_indices, weights, capacity)
+        ip = ip.greater_or_equal(var_indices, weights, objective_threshold)
+        ip = ip.integer_constraint(var_indices)
+
+        return ip
+
 
 # TODO: Unbounded Knapsack dataset
 
