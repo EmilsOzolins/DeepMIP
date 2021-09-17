@@ -137,7 +137,6 @@ def train(train_steps, network, optimizer, train_dataloader, dataset):
         network.global_step = global_step
         outputs, logits = network.forward(batch_holder, device)
 
-        # TODO: Deal with this loss garbage
         loss = 0
         total_loss_o = 0
         total_loss_c = 0
@@ -179,24 +178,24 @@ def combined_loss(asn, batch_holder):
     Makes objective loss dependent on constraint loss.
     """
     left_side = torch.sparse.mm(batch_holder.vars_const_graph.t(), asn)
-    vars_in_const = torch.sparse.sum(batch_holder.binary_vars_const_graph, dim=0).to_dense()
-    vars_in_const = torch.unsqueeze(vars_in_const, dim=-1)
 
     loss_c = torch.relu(left_side - torch.unsqueeze(batch_holder.const_values, dim=-1))
-    loss_c /= vars_in_const
-
     loss_per_var = torch.sparse.mm(batch_holder.binary_vars_const_graph, loss_c)
-
-    # TODO: Maybe zero is too strict and small leak should be allowed?
-    mask = torch.isclose(loss_per_var, torch.zeros_like(loss_per_var)).float()
-    mask = mask * 2 - 1
-    loss_per_var = mask * (loss_per_var + 1)
 
     # TODO: If no objective, optimize constraint loss directly
     obj_multipliers = torch.unsqueeze(batch_holder.objective_multipliers, dim=-1)
+    total_loss = obj_multipliers * asn - torch.square(loss_per_var) * obj_multipliers
 
-    graph_loss = torch.sparse.mm(batch_holder.vars_inst_graph.t(), obj_multipliers * asn * loss_per_var)
-    return torch.mean(graph_loss)
+    per_graph_loss = torch.sparse.mm(batch_holder.vars_inst_graph.t(), total_loss)
+
+    best_logit_map = torch.argmin(torch.sum(per_graph_loss, dim=0))
+
+    logit_maps = per_graph_loss.size()[-1]
+    costs = torch.square(torch.arange(1, logit_maps + 1, dtype=torch.float32, device=per_graph_loss.device))
+    sorted_loss, _ = torch.sort(per_graph_loss, dim=-1, descending=True)
+    per_graph_loss_avg = torch.sum(sorted_loss * costs, dim=-1) / torch.sum(costs)
+
+    return torch.mean(per_graph_loss_avg), best_logit_map
 
 
 def sum_loss_scaled(asn, batch_holder):
