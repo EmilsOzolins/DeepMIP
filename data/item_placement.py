@@ -1,4 +1,9 @@
+import ctypes
 import glob
+import gzip
+import multiprocessing as mp
+import pickle
+from pathlib import Path
 from typing import List, Dict
 
 import numpy as np
@@ -13,10 +18,25 @@ from utils.data import MIPBatchHolder
 
 
 class ItemPlacementDataset(MIPDataset, Dataset):
+    """
+    WARNING: Files are cached on disk! If any changes are made cache should be deleted manually.
+    """
 
-    def __init__(self, data_folder, augment: bool = False) -> None:
+    def __init__(self, data_folder, augment: bool = False, cache_dir="/tmp/cache/item_placement") -> None:
         self._instances = glob.glob(data_folder + "/*.npz")
         self._should_augment = augment
+        self._cache_dir = Path(cache_dir)
+
+        if not self._cache_dir.exists():
+            self._cache_dir.mkdir(parents=True)
+
+        # Shared array between workers
+        shared_array_base = mp.Array(ctypes.c_bool, len(self._instances))
+        shared_array = np.ctypeslib.as_array(shared_array_base.get_obj())
+        self._in_cache = shared_array.reshape(len(self._instances))
+
+        for idx in range(len(self._in_cache)):
+            self._in_cache[idx] = False
 
     @property
     def required_output_bits(self):
@@ -38,10 +58,38 @@ class ItemPlacementDataset(MIPDataset, Dataset):
 
     def __getitem__(self, index: int) -> Dict:
         file_name = self._instances[index]
+        file_path = Path(file_name)
+        name = file_path.name + ".pickle.gz"
+
+        cached_file = self._cache_dir / name
+
+        if self._in_cache[index]:
+            with gzip.open(cached_file) as file:
+                mip = pickle.load(file)
+        elif cached_file.exists():
+            self._in_cache[index] = True
+            with gzip.open(cached_file) as file:
+                mip = pickle.load(file)
+        else:
+            mip = self.get_mip_instance(file_name)
+            with gzip.open(cached_file, mode="wb") as file:
+                pickle.dump(mip, file)
+
+            self._in_cache[index] = True
+
+        return {"mip": mip.augment() if self._should_augment else mip,
+                "optimal_solution": torch.as_tensor([float('nan')], dtype=torch.float32)}
+
+    @staticmethod
+    def get_mip_instance(file_name: str):
         data = np.load(file_name)
 
+        # Matches https://doc.ecole.ai/py/en/stable/reference/observations.html#ecole.observation.NodeBipartiteObs.ColumnFeatures
         variables_features = data["variables_features"]
+
+        # Matches https://doc.ecole.ai/py/en/stable/reference/observations.html#ecole.observation.NodeBipartiteObs.RowFeatures
         constraints_features = data["constraints_features"]
+
         edges = data["edges"].astype(np.int64)
         edge_values = data["edge_values"]
         graph_shape = data["graph_shape"]
@@ -52,10 +100,8 @@ class ItemPlacementDataset(MIPDataset, Dataset):
         binary_variables = variables_features[:, 1]
         obj_multipliers = variables_features[:, 0]
         bias_values = constraints_features[:, 0]
-
         const_count, var_count = graph_shape
 
-        # TODO: Speed up this and do preprocessing only once
         constraints = [([], []) for _ in range(const_count)]
 
         for (c_id, var_id), val in zip(np.transpose(edges), edge_values):
@@ -77,8 +123,7 @@ class ItemPlacementDataset(MIPDataset, Dataset):
         int_constraints = [i for i, (bv, iv) in enumerate(zip(integer_variables, binary_variables)) if bv or iv]
         mip.integer_constraint(int_constraints)
 
-        return {"mip": mip.augment() if self._should_augment else mip,
-                "optimal_solution": torch.as_tensor([float('nan')], dtype=torch.float32)}
+        return mip
 
     def __len__(self) -> int:
         return len(self._instances)
