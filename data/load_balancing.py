@@ -9,7 +9,7 @@ from torch.utils.data import Dataset
 from data.datasets_base import MIPDataset
 from data.mip_instance import MIPInstance
 from metrics.general_metrics import Metrics
-from metrics.mip_metrics import MIPMetrics
+from metrics.mip_metrics import MIPMetrics, MIPMetrics_train
 from utils.data import MIPBatchHolder
 
 
@@ -29,7 +29,7 @@ class LoadBalancingDataset(MIPDataset, Dataset):
 
     @property
     def train_metrics(self) -> List[Metrics]:
-        return []
+        return [MIPMetrics_train()]
 
     def decode_model_outputs(self, model_output, batch_holder: MIPBatchHolder):
         output = torch.squeeze(model_output)

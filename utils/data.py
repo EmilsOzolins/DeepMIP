@@ -196,10 +196,17 @@ class MIPBatchHolder:
 
         return data if len(data) > 1 else data[0]
 
-# absolute value of a sparse tensor
-def sparse_abs(vars_obj_graph):
+# applies the given function to sparse tensor values
+def sparse_func(vars_obj_graph, func):
     abs_graph = torch.sparse_coo_tensor(vars_obj_graph.indices(),
-                                          torch.abs(vars_obj_graph.values()),
+                                          func(vars_obj_graph.values()),
+                                          size=vars_obj_graph.size(),
+                                          device=vars_obj_graph.device)
+    return abs_graph
+
+def make_sparse_unit(vars_obj_graph):
+    abs_graph = torch.sparse_coo_tensor(vars_obj_graph.indices(),
+                                          torch.ones_like(vars_obj_graph.values()),
                                           size=vars_obj_graph.size(),
                                           device=vars_obj_graph.device)
     return abs_graph
