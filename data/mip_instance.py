@@ -1,5 +1,5 @@
-from typing import List
 from random import sample
+from typing import List
 
 import torch
 from ortools.linear_solver import pywraplp
@@ -117,14 +117,15 @@ class MIPInstance:
         # randomly select indices for constraints to drop
         n_dropped_constraints = int(self._current_constraint_index * self._drop_percentage)
         dropped_constraint_indices = sample(range(self._current_constraint_index), n_dropped_constraints)
-        remaining_constraint_indices = [i for i in range(self._current_constraint_index) if i not in dropped_constraint_indices]
+        remaining_constraint_indices = [i for i in range(self._current_constraint_index) if
+                                        i not in dropped_constraint_indices]
 
         # drop values from indices and multipliers corresponding to the dropped constraints
         for i in reversed(range(len(self._indices))):
             if self._indices[i][1] in dropped_constraint_indices:
                 self._indices.pop(i)
                 self._multipliers.pop(i)
-        
+
         # renumber the constraints so that there are no gaps
         for i in range(len(self._indices)):
             old_constraint_index = self._indices[i][1]
@@ -137,7 +138,7 @@ class MIPInstance:
                 self._right_side_values.pop(i)
 
         # drop vars no longer existing from self._integer_indices
-        variable_indices = sorted(list(set([pair[0] for pair in self._indices]))) # existing unique variable indices
+        variable_indices = sorted(list(set([pair[0] for pair in self._indices])))  # existing unique variable indices
         updated_integer_indices = self._integer_indices.copy()
         for i in self._integer_indices:
             if i not in variable_indices:
@@ -149,7 +150,6 @@ class MIPInstance:
             if self._objective_indices[i] not in variable_indices:
                 self._objective_indices.pop(i)
                 self._objective_multipliers.pop(i)
-                
 
         self._max_var_index = max(max(variable_indices), self._max_var_index)
         self._current_constraint_index -= n_dropped_constraints
@@ -165,7 +165,7 @@ class MIPInstance:
         fixed_variable_indices = sample(variable_indices, n_fixed_variables)
 
         # solve the instance with OR-Tools and fix the selected variables
-        solution = self.solve()
+        solution, obj_value = self.solve()
         for i in solution:
             if i in fixed_variable_indices:
                 self.equal([i], [1], solution[i])
@@ -175,38 +175,29 @@ class MIPInstance:
     def solve(self):
         solver = pywraplp.Solver.CreateSolver('SCIP')
 
-        variable_indices = sorted(list(set([pair[0] for pair in self._indices]))) # existing unique variable indices
-        int_variable_indices = sorted(list(self._integer_indices))
-        num_variable_indices = [i for i in variable_indices if i not in int_variable_indices]
+        variable_indices = [x for x in range(self.next_variable_index)]  # existing unique variable indices
 
-        int_variables = [solver.IntVar(0, solver.infinity(), str(i)) for i in int_variable_indices]
-        num_variables = [solver.NumVar(0, solver.infinity(), str(i)) for i in num_variable_indices]
-        variable_dict = dict(list(zip(int_variable_indices,int_variables)) + list(zip(num_variable_indices,num_variables)))
+        # TODO: Allow setting upper and lower bounds for variables
+        variables = []
+        for v_id in variable_indices:
+            var = solver.IntVar(0, 1, str(v_id)) if v_id in self._integer_indices else solver.NumVar(0, 1, str(v_id))
+            variables.append(var)
 
         # add each constraint to the solver
         for c in range(self._current_constraint_index):
-            c_variable_indices_pairs = [pair for pair in self._indices if pair[1] == c]
-            c_first_var_pair_index = self._indices.index(c_variable_indices_pairs[0])
-            c_last_var_pair_index = self._indices.index(c_variable_indices_pairs[-1])
-            c_variable_indices = [pair[0] for pair in c_variable_indices_pairs]
-            c_weights = self._multipliers[c_first_var_pair_index:c_last_var_pair_index + 1]
-            c_left_side = sum([c_weights[i] * variable_dict[c_variable_indices[i]] for i in range(len(c_variable_indices))])
+            zip_values = zip(self._indices, self._multipliers)
+            vars_mul_obj_pairs = [(p[0], m) for p, m in zip_values if p[1] == c]
+
+            c_left_side = sum([variables[idx] * mult for idx, mult in vars_mul_obj_pairs])
             solver.Add(c_left_side <= self._right_side_values[c])
 
-        # -1 multiplier because this class has minimize as default but ortools has maximize as default
-        solver.Maximize(sum([variable_dict[self._objective_indices[i]] * self._objective_multipliers[i] * -1 for i in range(len(self._objective_indices))]))
+        # -1 multiplier because this class has minimize as default but OR-tools has maximize as default
+        obj_function = sum([-1 * m * v for v, m in zip(variables, self._objective_multipliers)])
+        solver.Maximize(obj_function)
         solver.Solve()
 
-        solution_var_dict = {}
-        for key in variable_dict:
-            if key in int_variables:
-                solution_var_dict[key] = round(variable_dict[key].solution_value())
-            else:
-                solution_var_dict[key] = variable_dict[key].solution_value()
+        return [v.solution_value() for v in variables], -solver.Objective().Value()  # turn optimization direction back
 
-        # print(solver.Objective().Value())
-        return solution_var_dict
-    
     def augment(self):
         for i in range(self._augment_steps):
             self.drop_random_constraints()
