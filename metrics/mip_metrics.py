@@ -142,14 +142,19 @@ class MIPMetrics_train(MIPMetrics):
         self._avg = AverageMetrics()
 
     def update(self, prediction: torch.Tensor, batch_holder: MIPBatchHolder, **kwargs):
-        logits = kwargs['logits'][:,0]
+        logits = kwargs['logits'][:,0] # not rounded values
 
+        const_inst_graph = batch_holder.const_inst_graph
         vars_const_graph = batch_holder.vars_const_graph
         const_values = batch_holder.const_values
 
         max_violation = self._max_constraints(logits, vars_const_graph, const_values)
+        sat_const = self._satisfied_constraints(logits, vars_const_graph, const_values)
+        fully_sat_mips = self._fully_satisfied(logits, vars_const_graph, const_values, const_inst_graph)
 
         self._avg.update(
+            satisfied_constraints=sat_const,
+            fully_satisfied_instances=fully_sat_mips,
             max_violation = max_violation
         )
 
