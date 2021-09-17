@@ -136,7 +136,7 @@ class BinaryKnapsackDataset(BoundedKnapsackDataset):
 class ConstrainedBinaryKnapsackDataset(BinaryKnapsackDataset):
 
     def __init__(self, min_variables, max_variables, max_weight=20, max_values=20) -> None:
-        self.suboptimality = 10
+        self.suboptimality = 3.0
         super().__init__(min_variables, max_variables, max_weight=max_weight, max_values=max_values)
 
     def __iter__(self) -> Iterator[Dict]:
