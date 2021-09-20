@@ -1,9 +1,7 @@
 import torch
 import torch.nn as nn
-
 from model.normalization import NodeNorm, PairNorm
-from utils.data import MIPBatchHolder, sparse_func, make_sparse_unit
-
+from utils.data import sparse_func, InputDataHolder
 
 def sample_triangular(shape):
     sample1 = torch.rand(shape).cuda()
@@ -52,7 +50,7 @@ class MIPNetwork(torch.nn.Module):
 
         self.step = 0
 
-    def forward(self, batch_holder: MIPBatchHolder, device):
+    def forward(self, batch_holder: InputDataHolder, device):
         # TODO: Experiment with disentangled architecture
         var_count, const_count = batch_holder.vars_const_graph.size()
         _, objective_count = batch_holder.vars_inst_graph.size()
@@ -64,10 +62,10 @@ class MIPNetwork(torch.nn.Module):
 
         const_values = torch.unsqueeze(batch_holder.const_values, dim=-1)
         obj_multipliers = torch.unsqueeze(batch_holder.objective_multipliers, dim=-1)
-        obj_multipliers /= torch.mean(torch.abs(obj_multipliers))+1e-6
+        obj_multipliers /= torch.mean(torch.abs(obj_multipliers)) + 1e-6
 
         abs_graph = sparse_func(batch_holder.vars_const_graph, torch.abs)
-        #unit_graph = make_sparse_unit(batch_holder.vars_const_graph)
+        # unit_graph = make_sparse_unit(batch_holder.vars_const_graph)
         # const_scaler = torch.sqrt(torch.sparse.sum(abs_graph, dim=0).to_dense()) + 1e-6
         # denom = torch.sparse.sum(unit_graph, dim=0).to_dense()+1e-6
         # const_scaler = torch.unsqueeze(const_scaler/denom, dim=-1)

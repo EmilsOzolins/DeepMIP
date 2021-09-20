@@ -14,7 +14,7 @@ from data.datasets_base import MIPDataset
 from data.mip_instance import MIPInstance
 from metrics.general_metrics import Metrics
 from metrics.mip_metrics import MIPMetrics, MIPMetrics_train
-from utils.data import MIPBatchHolder
+from utils.data import MIPBatchHolder, InputDataHolder
 
 
 class ItemPlacementDataset(MIPDataset, Dataset):
@@ -50,7 +50,7 @@ class ItemPlacementDataset(MIPDataset, Dataset):
     def train_metrics(self) -> List[Metrics]:
         return [MIPMetrics_train()]
 
-    def decode_model_outputs(self, model_output, batch_holder: MIPBatchHolder):
+    def decode_model_outputs(self, model_output, batch_holder: InputDataHolder):
         output = torch.squeeze(model_output)
         mask = batch_holder.integer_mask
         inv_mask = 1 - mask

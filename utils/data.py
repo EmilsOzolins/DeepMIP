@@ -1,11 +1,11 @@
+from abc import abstractmethod
 from collections import defaultdict
 from functools import cached_property, lru_cache
-from typing import Tuple, List, Dict
+from typing import Tuple, List, Dict, Any
 
 import torch
-from torch import Tensor
-
 from data.mip_instance import MIPInstance
+from torch import Tensor
 
 
 def batch_data(batch: List[Dict]):
@@ -128,7 +128,64 @@ def batch_as_tensor(batch_data: Tuple[Tensor]):
     return torch.stack(batch_data, dim=0)
 
 
-class MIPBatchHolder:
+class InputDataHolder:
+
+    @property
+    @abstractmethod
+    def vars_const_graph(self) -> torch.sparse.Tensor:
+        pass
+
+    @property
+    @abstractmethod
+    def binary_vars_const_graph(self) -> torch.sparse.Tensor:
+        pass
+
+    @property
+    @abstractmethod
+    def const_values(self) -> torch.Tensor:
+        pass
+
+    @property
+    @abstractmethod
+    def vars_obj_graph(self) -> torch.sparse.Tensor:
+        pass
+
+    @property
+    @abstractmethod
+    def const_inst_graph(self) -> torch.sparse.Tensor:
+        pass
+
+    @property
+    @abstractmethod
+    def vars_inst_graph(self) -> torch.sparse.Tensor:
+        pass
+
+    @property
+    @abstractmethod
+    def optimal_solution(self) -> torch.Tensor:
+        """ Returns precomputed optimal value of objective function.
+        """
+        pass
+
+    @property
+    @abstractmethod
+    def integer_mask(self) -> torch.Tensor:
+        """ Returns mask over integer variables where 1 if variable should be integer and 0 for others. """
+        pass
+
+    @property
+    @abstractmethod
+    def objective_multipliers(self) -> torch.Tensor:
+        pass
+
+    @abstractmethod
+    def get_data(self, *keys: str) -> Any:
+        """ Here you can get various task specific data, that is not directly related to MIP.
+        """
+        pass
+
+
+class MIPBatchHolder(InputDataHolder):
 
     def __init__(self, batched_data: dict, device) -> None:
         self._batched_data = batched_data
@@ -166,13 +223,10 @@ class MIPBatchHolder:
 
     @cached_property
     def optimal_solution(self):
-        """ Returns precomputed optimal value of objective function.
-        """
         return self._batched_data['optimal_solution'].to(device=self._device)
 
     @cached_property
     def integer_mask(self):
-        """ Returns mask over integer variables where 1 if variable should be integer and 0 for others. """
         *_, size = self._batched_data["mip"]["vars_per_graph"]
         mask = torch.zeros([size[0]], device=self._device)
         indices = self._batched_data["mip"]["integer_variables"].to(device=self._device)
@@ -189,24 +243,24 @@ class MIPBatchHolder:
 
     @lru_cache(maxsize=None)
     def get_data(self, *keys: str):
-        """ Here you can get various task specific data, that is not directly related to MIP.
-        """
         data = [self._batched_data[k] for k in keys]
         data = [x.to(device=self._device) if isinstance(x, torch.Tensor) else x for x in data]
 
         return data if len(data) > 1 else data[0]
 
+
 # applies the given function to sparse tensor values
 def sparse_func(vars_obj_graph, func):
     abs_graph = torch.sparse_coo_tensor(vars_obj_graph.indices(),
-                                          func(vars_obj_graph.values()),
-                                          size=vars_obj_graph.size(),
-                                          device=vars_obj_graph.device)
+                                        func(vars_obj_graph.values()),
+                                        size=vars_obj_graph.size(),
+                                        device=vars_obj_graph.device)
     return abs_graph
+
 
 def make_sparse_unit(vars_obj_graph):
     abs_graph = torch.sparse_coo_tensor(vars_obj_graph.indices(),
-                                          torch.ones_like(vars_obj_graph.values()),
-                                          size=vars_obj_graph.size(),
-                                          device=vars_obj_graph.device)
+                                        torch.ones_like(vars_obj_graph.values()),
+                                        size=vars_obj_graph.size(),
+                                        device=vars_obj_graph.device)
     return abs_graph
