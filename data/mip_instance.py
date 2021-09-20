@@ -1,3 +1,4 @@
+import os
 from random import sample
 from typing import List
 
@@ -172,7 +173,7 @@ class MIPInstance:
 
         return self
 
-    def solve(self):
+    def solve(self, time_limit=1200 * 1000):
         solver = pywraplp.Solver.CreateSolver('SCIP')
 
         variable_indices = [x for x in range(self.next_variable_index)]  # existing unique variable indices
@@ -194,6 +195,8 @@ class MIPInstance:
         # -1 multiplier because this class has minimize as default but OR-tools has maximize as default
         obj_function = sum([-1 * m * v for v, m in zip(variables, self._objective_multipliers)])
         solver.Maximize(obj_function)
+        solver.set_time_limit(time_limit)
+        solver.SetNumThreads(os.cpu_count())
         solver.Solve()
 
         return [v.solution_value() for v in variables], -solver.Objective().Value()  # turn optimization direction back
