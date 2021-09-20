@@ -22,6 +22,7 @@ from utils.visualize import format_metrics
 now = dt.now()
 run_directory = config.model_dir + "/" + now.strftime("%Y%m%d-%H%M%S")
 summary = SummaryWriter(run_directory)
+load_directory = None # config.model_dir + "/" + '20210920-064201'
 global_step = 0
 
 
@@ -43,14 +44,10 @@ def main():
     # train_dataset = IntegerSudokuDataset(sudoku_train_data)
     # val_dataset = IntegerSudokuDataset(sudoku_val_data)
     #
-    # test_dataset = BinaryKnapsackDataset(2, 20)
-    # train_dataset = BinaryKnapsackDataset(2, 20)
-    # val_dataset = BinaryKnapsackDataset(2, 20)
+    test_dataset = BinaryKnapsackDataset(2, 20)
+    train_dataset = BinaryKnapsackDataset(2, 20)
+    val_dataset = BinaryKnapsackDataset(2, 20)
     #
-    # test_dataset = ConstrainedBinaryKnapsackDataset(2, 20)
-    # train_dataset = ConstrainedBinaryKnapsackDataset(2, 20)
-    # val_dataset = ConstrainedBinaryKnapsackDataset(2, 20)
-
     # test_dataset = ConstrainedBinaryKnapsackDataset(2, 20)
     # train_dataset = ConstrainedBinaryKnapsackDataset(2, 20)
     # val_dataset = ConstrainedBinaryKnapsackDataset(2, 20)
@@ -58,8 +55,8 @@ def main():
     # train_dataset = LoadBalancingDataset(augment=False, data_folder="/host-dir/mip_data/load_balancing/train")
     # val_dataset = LoadBalancingDataset(augment=False, data_folder="/host-dir/mip_data/load_balancing/valid")
 
-    train_dataset = ItemPlacementDataset("/host-dir/mip_data/item_placement/train")
-    val_dataset = ItemPlacementDataset("/host-dir/mip_data/item_placement/valid")
+    # train_dataset = ItemPlacementDataset("/host-dir/mip_data/item_placement/train")
+    # val_dataset = ItemPlacementDataset("/host-dir/mip_data/item_placement/valid")
 
     train_dataloader = create_data_loader(train_dataset)
     validation_dataloader = create_data_loader(val_dataset)
@@ -74,6 +71,13 @@ def main():
 
     current_step = 0
     train_steps = 1000
+
+    if load_directory is not None:
+        checkpoint = torch.load(load_directory + "/model.pth")
+        network.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        #current_step = checkpoint['step']
+
 
     while current_step < params.train_steps:
         # with experiment.train():
@@ -158,8 +162,8 @@ def train(train_steps, network, optimizer, train_dataloader, dataset):
         total_loss_o /= steps_taken
         total_loss_c /= steps_taken
         loss /= steps_taken
-        # regul_loss = torch.mean(torch.square(logits))
-        # loss += regul_loss*1e-5 #todo only for sigmoid vars
+        regul_loss = torch.mean(torch.square(logits) * torch.unsqueeze(batch_holder.integer_mask, dim=-1))
+        loss += regul_loss * params.logit_regularizer
 
         result = outputs[-1][:, best_logit_map:best_logit_map + 1]
         prediction = dataset.decode_model_outputs(result, batch_holder)
@@ -235,7 +239,7 @@ def sum_loss_meanscaled(asn, batch_holder):
     scalers2_o = torch.sparse.sum(ones_graph_o, dim=0).to_dense()
     loss_o_scaled = loss_o * torch.unsqueeze(scalers2_o / torch.maximum(scalers1_o, torch.ones_like(scalers1_o)),dim=-1)
 
-    per_graph_loss = loss_c + loss_o_scaled * 0.03
+    per_graph_loss = loss_c + loss_o_scaled * params.objective_loss_scale
     best_logit_map = torch.argmin(torch.sum(per_graph_loss, dim=0))
 
     logit_maps = per_graph_loss.size()[-1]
@@ -272,7 +276,7 @@ def sum_loss_sumscaled(asn, batch_holder):
     scalers1_o = torch.sparse.sum(abs_graph_o, dim=0).to_dense()
     loss_o_scaled = loss_o * torch.unsqueeze(1. / torch.maximum(scalers1_o, torch.ones_like(scalers1_o)),dim=-1)
 
-    per_graph_loss = loss_c + loss_o_scaled*0.03
+    per_graph_loss = loss_c + loss_o_scaled * params.objective_loss_scale
     best_logit_map = torch.argmin(torch.sum(per_graph_loss, dim=0))
 
     logit_maps = per_graph_loss.size()[-1]
@@ -292,7 +296,7 @@ def sum_loss(asn, batch_holder):
     loss_c = torch.sparse.mm(batch_holder.const_inst_graph.t(), loss_c)
     loss_c = torch.sqrt(loss_c + 1e-6) - np.sqrt(1e-6)
     loss_o = torch.sparse.mm(batch_holder.vars_obj_graph.t(), asn)
-    per_graph_loss = loss_c + loss_o * 0.03
+    per_graph_loss = loss_c + loss_o * params.objective_loss_scale
     best_logit_map = torch.argmin(torch.sum(per_graph_loss, dim=0))
 
     logit_maps = per_graph_loss.size()[-1]
