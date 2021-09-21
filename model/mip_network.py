@@ -41,7 +41,6 @@ class MIPNetwork(torch.nn.Module):
 
         self.output = nn.Sequential(
             nn.Linear(self.feature_maps, self.feature_maps),
-            NodeNorm(),
             nn.ReLU(),
             nn.Linear(self.feature_maps, output_bits)
         )
@@ -105,8 +104,8 @@ class MIPNetwork(torch.nn.Module):
             variables = self.variable_update(var_msg) + 0.5 * variables
 
             out_vars = self.output(variables)
-            # int_noise = self.noise.sample(out_vars.size()).cuda()
-            int_noise = sample_triangular(out_vars.size())
+            int_noise = self.noise.sample(out_vars.size()).cuda()
+            #int_noise = sample_triangular(out_vars.size())
 
             # Noise is not applied to variables that doesn't have integer constraint
             if self.training:

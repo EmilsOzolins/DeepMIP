@@ -44,9 +44,9 @@ def main():
     # train_dataset = IntegerSudokuDataset(sudoku_train_data)
     # val_dataset = IntegerSudokuDataset(sudoku_val_data)
     #
-    test_dataset = BinaryKnapsackDataset(2, 20)
-    train_dataset = BinaryKnapsackDataset(2, 20, augment=True)
-    val_dataset = BinaryKnapsackDataset(2, 20)
+    # test_dataset = BinaryKnapsackDataset(2, 20)
+    # train_dataset = BinaryKnapsackDataset(2, 20, augment=True)
+    # val_dataset = BinaryKnapsackDataset(2, 20)
     #
     # test_dataset = ConstrainedBinaryKnapsackDataset(2, 20)
     # train_dataset = ConstrainedBinaryKnapsackDataset(2, 20)
@@ -56,8 +56,8 @@ def main():
     # train_dataset = ConstrainedBinaryKnapsackDataset(2, 20)
     # val_dataset = ConstrainedBinaryKnapsackDataset(2, 20)
 
-    # train_dataset = LoadBalancingDataset("/host-dir/mip_data/load_balancing/train")
-    # val_dataset = LoadBalancingDataset("/host-dir/mip_data/load_balancing/valid")
+    train_dataset = LoadBalancingDataset("/host-dir/mip_data/load_balancing/train")
+    val_dataset = LoadBalancingDataset("/host-dir/mip_data/load_balancing/valid")
 
     # train_dataset = ItemPlacementDataset("/host-dir/mip_data/item_placement/train", augment=True)
     # val_dataset = ItemPlacementDataset("/host-dir/mip_data/item_placement/valid")
@@ -85,48 +85,46 @@ def main():
     while current_step < params.train_steps:
         # with experiment.train():
         network.train()
-        torch.enable_grad()
-        loss_res, elapsed_time, disc_metric = train(train_steps, network,
-                                                    optimizer, train_dataloader, train_dataset)
-        current_step += train_steps
-        print(format_metrics("train", current_step, {**disc_metric, **loss_res, "elapsed_time": elapsed_time}))
-        # experiment.log_metrics({**disc_metric, **loss_res, "elapsed_time": elapsed_time})
-
-        for name, param in network.named_parameters():
-            summary.add_histogram("grad/" + name, param.grad, current_step)
-            summary.add_histogram("params/" + name, param.data, current_step)
-
-        for k, v in loss_res.items():
-            summary.add_scalar("loss/" + k, v, current_step)
-
-        for k, v in disc_metric.items():
-            summary.add_scalar("discrete/" + k, v, current_step)
-
-        torch.save({
-            'step': current_step,
-            'model_state_dict': network.state_dict(),
-            'optimizer_state_dict': optimizer.state_dict(),
-        }, run_directory + "/model.pth")
-
-        # TODO: Implement training, validating and tasting from checkpoint
-
-        # with experiment.validate():
-        network.eval()
         with torch.no_grad():
+            loss_res, elapsed_time, disc_metric = train(train_steps, network,
+                                                        optimizer, train_dataloader, train_dataset)
+            current_step += train_steps
+            print(format_metrics("train", current_step, {**disc_metric, **loss_res, "elapsed_time": elapsed_time}))
+            # experiment.log_metrics({**disc_metric, **loss_res, "elapsed_time": elapsed_time})
+
+            for name, param in network.named_parameters():
+                summary.add_histogram("grad/" + name, param.grad, current_step)
+                summary.add_histogram("params/" + name, param.data, current_step)
+
+            for k, v in loss_res.items():
+                summary.add_scalar("loss/" + k, v, current_step)
+
+            for k, v in disc_metric.items():
+                summary.add_scalar("discrete/" + k, v, current_step)
+
+            torch.save({
+                'step': current_step,
+                'model_state_dict': network.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+            }, run_directory + "/model.pth")
+
+            # TODO: Implement training, validating and tasting from checkpoint
+
+            # with experiment.validate():
+            network.eval()
             results = evaluate_model(network, validation_dataloader, val_dataset, eval_iterations=100)
 
-        print(format_metrics("val", current_step, results))
-        # experiment.log_metrics(results)
+            print(format_metrics("val", current_step, results))
+            # experiment.log_metrics(results)
 
-        for k, v in results.items():
-            summary.add_scalar("validate/" + k, v, current_step, new_style=True)
+            for k, v in results.items():
+                summary.add_scalar("validate/" + k, v, current_step, new_style=True)
 
     summary.flush()
     summary.close()
 
     # with experiment.test():
     network.eval()
-    torch.no_grad()
     test_dataloader = create_data_loader(test_dataset)
 
     results = evaluate_model(network, test_dataloader, test_dataset, eval_iterations=100)
@@ -147,26 +145,30 @@ def train(train_steps, network, optimizer, train_dataloader, dataset):
         batch_holder = MIPBatchHolder(batched_data, device)
 
         optimizer.zero_grad(set_to_none=True)
-        network.global_step = global_step
-        outputs, logits = network.forward(batch_holder, device)
+        with torch.enable_grad():
+            network.global_step = global_step
+            outputs, logits = network.forward(batch_holder, device)
 
-        loss = 0
-        total_loss_o = 0
-        total_loss_c = 0
-        for asn in outputs:
-            l, loss_c, loss_o, best_logit_map = sum_loss(asn, batch_holder)
-            # l, best_logit_map = combined_loss(asn, batch_holder)
-            loss += l
-            total_loss_o += loss_o
-            total_loss_c += loss_c
+            loss = 0
+            total_loss_o = 0
+            total_loss_c = 0
+            for asn in outputs:
+                l, loss_c, loss_o, best_logit_map = sum_loss(asn, batch_holder)
+                # l, best_logit_map = combined_loss(asn, batch_holder)
+                loss += l
+                total_loss_o += loss_o
+                total_loss_c += loss_c
 
-        steps_taken = len(outputs)
+            steps_taken = len(outputs)
 
-        total_loss_o /= steps_taken
-        total_loss_c /= steps_taken
-        loss /= steps_taken
-        regul_loss = torch.mean(torch.square(logits) * torch.unsqueeze(batch_holder.integer_mask, dim=-1))
-        loss += regul_loss * params.logit_regularizer
+            total_loss_o /= steps_taken
+            total_loss_c /= steps_taken
+            loss /= steps_taken
+            regul_loss = torch.mean(torch.square(logits) * torch.unsqueeze(batch_holder.integer_mask, dim=-1))
+            loss += regul_loss * params.logit_regularizer
+
+            loss.backward()
+            optimizer.step()
 
         result = outputs[-1][:, best_logit_map:best_logit_map + 1]
         prediction = dataset.decode_model_outputs(result, batch_holder)
@@ -176,8 +178,6 @@ def train(train_steps, network, optimizer, train_dataloader, dataset):
         summary.add_histogram("values", result, global_step)
         global_step += 1
 
-        loss.backward()
-        optimizer.step()
         #
         # experiment.log_metric("loss", loss)
         # experiment.log_metric("loss_opt", total_loss_o)
