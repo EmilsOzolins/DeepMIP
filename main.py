@@ -22,7 +22,7 @@ from utils.visualize import format_metrics
 now = dt.now()
 run_directory = config.model_dir + "/" + now.strftime("%Y%m%d-%H%M%S")
 summary = SummaryWriter(run_directory)
-load_directory = None # config.model_dir + "/" + '20210920-064201'
+load_directory = None  # config.model_dir + "/" + '20210920-064201'
 global_step = 0
 
 
@@ -45,7 +45,7 @@ def main():
     # val_dataset = IntegerSudokuDataset(sudoku_val_data)
     #
     test_dataset = BinaryKnapsackDataset(2, 20)
-    train_dataset = BinaryKnapsackDataset(2, 20)
+    train_dataset = BinaryKnapsackDataset(2, 20, augment=True)
     val_dataset = BinaryKnapsackDataset(2, 20)
     #
     # test_dataset = ConstrainedBinaryKnapsackDataset(2, 20)
@@ -56,10 +56,10 @@ def main():
     # train_dataset = ConstrainedBinaryKnapsackDataset(2, 20)
     # val_dataset = ConstrainedBinaryKnapsackDataset(2, 20)
 
-    train_dataset = LoadBalancingDataset("/host-dir/mip_data/load_balancing/train")
-    val_dataset = LoadBalancingDataset("/host-dir/mip_data/load_balancing/valid")
+    # train_dataset = LoadBalancingDataset("/host-dir/mip_data/load_balancing/train")
+    # val_dataset = LoadBalancingDataset("/host-dir/mip_data/load_balancing/valid")
 
-    # train_dataset = ItemPlacementDataset("/host-dir/mip_data/item_placement/train")
+    # train_dataset = ItemPlacementDataset("/host-dir/mip_data/item_placement/train", augment=True)
     # val_dataset = ItemPlacementDataset("/host-dir/mip_data/item_placement/valid")
 
     train_dataloader = create_data_loader(train_dataset)
@@ -80,8 +80,7 @@ def main():
         checkpoint = torch.load(load_directory + "/model.pth")
         network.load_state_dict(checkpoint['model_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        #current_step = checkpoint['step']
-
+        # current_step = checkpoint['step']
 
     while current_step < params.train_steps:
         # with experiment.train():
@@ -253,6 +252,7 @@ def sum_loss_meanscaled(asn, batch_holder):
 
     return torch.mean(per_graph_loss_avg), torch.mean(loss_c), torch.mean(loss_o), best_logit_map
 
+
 def sum_loss_sumscaled(asn, batch_holder):
     eps = 1e-2  # TODO. Also eps in validation because there cn be equality constraints
     left_side = torch.sparse.mm(batch_holder.vars_const_graph.t(), asn)
@@ -278,7 +278,7 @@ def sum_loss_sumscaled(asn, batch_holder):
                                           size=batch_holder.vars_obj_graph.size(),
                                           device=batch_holder.vars_obj_graph.device)
     scalers1_o = torch.sparse.sum(abs_graph_o, dim=0).to_dense()
-    loss_o_scaled = loss_o * torch.unsqueeze(1. / torch.maximum(scalers1_o, torch.ones_like(scalers1_o)),dim=-1)
+    loss_o_scaled = loss_o * torch.unsqueeze(1. / torch.maximum(scalers1_o, torch.ones_like(scalers1_o)), dim=-1)
 
     per_graph_loss = loss_c + loss_o_scaled * params.objective_loss_scale
     best_logit_map = torch.argmin(torch.sum(per_graph_loss, dim=0))
@@ -289,6 +289,7 @@ def sum_loss_sumscaled(asn, batch_holder):
     per_graph_loss_avg = torch.sum(sorted_loss * costs, dim=-1) / torch.sum(costs)
 
     return torch.mean(per_graph_loss_avg), torch.mean(loss_c), torch.mean(loss_o), best_logit_map
+
 
 def sum_loss(asn, batch_holder):
     return sum_loss_sumscaled(asn, batch_holder)

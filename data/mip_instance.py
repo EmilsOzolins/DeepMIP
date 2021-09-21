@@ -1,5 +1,4 @@
-import os
-from random import sample
+import random
 from typing import List
 
 import torch
@@ -26,7 +25,7 @@ class MIPInstance:
         self._integer_indices = set()
         self._drop_percentage = 0.05
         self._fix_percentage = 0.05
-        self._augment_steps = 10
+        self._augment_steps = 1
 
     def greater_or_equal(self, variable_indices: List[int],
                          variable_multipliers: List[float],
@@ -117,7 +116,7 @@ class MIPInstance:
     def drop_random_constraints(self):
         # randomly select indices for constraints to drop
         n_dropped_constraints = int(self._current_constraint_index * self._drop_percentage)
-        dropped_constraint_indices = sample(range(self._current_constraint_index), n_dropped_constraints)
+        dropped_constraint_indices = random.sample(range(self._current_constraint_index), n_dropped_constraints)
         remaining_constraint_indices = [i for i in range(self._current_constraint_index) if
                                         i not in dropped_constraint_indices]
 
@@ -159,21 +158,20 @@ class MIPInstance:
 
     def fix_random_variables(self):
         # get existing unique variable indices
-        variable_indices = sorted(list(set([pair[0] for pair in self._indices])))
+        variable_indices = [x for x in range(self.next_variable_index)]
 
         # randomly select indices for variables to fix
-        n_fixed_variables = int(len(variable_indices) * self._fix_percentage)
-        fixed_variable_indices = sample(variable_indices, n_fixed_variables)
+        n_fixed_variables = int(self.next_variable_index * self._fix_percentage)
+        fixed_variable_indices = random.sample(variable_indices, n_fixed_variables)
 
         # solve the instance with OR-Tools and fix the selected variables
         solution, obj_value = self.solve()
-        for i in solution:
-            if i in fixed_variable_indices:
-                self.equal([i], [1], solution[i])
+        for idx in fixed_variable_indices:
+            self.equal([idx], [1], solution[idx])
 
         return self
 
-    def solve(self, time_limit=1200 * 1000):
+    def solve(self):
         solver = pywraplp.Solver.CreateSolver('SCIP')
 
         variable_indices = [x for x in range(self.next_variable_index)]  # existing unique variable indices
@@ -195,16 +193,15 @@ class MIPInstance:
         # -1 multiplier because this class has minimize as default but OR-tools has maximize as default
         obj_function = sum([-1 * m * v for v, m in zip(variables, self._objective_multipliers)])
         solver.Maximize(obj_function)
-        solver.set_time_limit(time_limit)
-        solver.SetNumThreads(os.cpu_count())
         solver.Solve()
 
         return [v.solution_value() for v in variables], -solver.Objective().Value()  # turn optimization direction back
 
     def augment(self):
         for i in range(self._augment_steps):
-            self.drop_random_constraints()
+            # self.drop_random_constraints()
             self.fix_random_variables()
+
         return self
 
     @property

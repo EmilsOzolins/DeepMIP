@@ -109,8 +109,9 @@ class BoundedKnapsackDataset(MIPDataset, IterableDataset):
 
 class BinaryKnapsackDataset(BoundedKnapsackDataset):
 
-    def __init__(self, min_variables, max_variables, max_weight=20, max_values=20) -> None:
+    def __init__(self, min_variables, max_variables, augment=False, max_weight=20, max_values=20) -> None:
         super().__init__(min_variables, max_variables, max_copies=1, max_weight=max_weight, max_values=max_values)
+        self._augment = augment
 
     def decode_model_outputs(self, model_output, batch_holder: MIPBatchHolder):
         assignments = torch.round(model_output)
@@ -130,7 +131,7 @@ class BinaryKnapsackDataset(BoundedKnapsackDataset):
         ip = ip.maximize_objective(var_indices, values)
         ip = ip.integer_constraint(var_indices)
 
-        return ip
+        return ip.augment() if self._augment else ip
 
 
 class ConstrainedBinaryKnapsackDataset(BinaryKnapsackDataset):
