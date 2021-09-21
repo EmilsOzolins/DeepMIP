@@ -179,7 +179,10 @@ class MIPInstance:
         # TODO: Allow setting upper and lower bounds for variables
         variables = []
         for v_id in variable_indices:
-            var = solver.IntVar(0, 1, str(v_id)) if v_id in self._integer_indices else solver.NumVar(0, 1, str(v_id))
+            if v_id in self._integer_indices:
+                var = solver.IntVar(0, 1, "i_" + str(v_id))
+            else:
+                var = solver.NumVar(0, 1, "r_" + str(v_id))
             variables.append(var)
 
         # add each constraint to the solver
@@ -193,7 +196,10 @@ class MIPInstance:
         # -1 multiplier because this class has minimize as default but OR-tools has maximize as default
         obj_function = sum([-1 * m * v for v, m in zip(variables, self._objective_multipliers)])
         solver.Maximize(obj_function)
-        solver.Solve()
+        status = solver.Solve()
+
+        if status not in {pywraplp.Solver.OPTIMAL, pywraplp.Solver.FEASIBLE}:
+            raise RuntimeError(f"Solution to MIP instance not found! Solver status is {status}")
 
         return [v.solution_value() for v in variables], -solver.Objective().Value()  # turn optimization direction back
 
