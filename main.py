@@ -56,11 +56,11 @@ def main():
     # train_dataset = ConstrainedBinaryKnapsackDataset(2, 20)
     # val_dataset = ConstrainedBinaryKnapsackDataset(2, 20)
 
-    train_dataset = LoadBalancingDataset("/host-dir/mip_data/load_balancing/train")
-    val_dataset = LoadBalancingDataset("/host-dir/mip_data/load_balancing/valid")
+    # train_dataset = LoadBalancingDataset("/host-dir/mip_data/load_balancing/train")
+    # val_dataset = LoadBalancingDataset("/host-dir/mip_data/load_balancing/valid")
 
-    # train_dataset = ItemPlacementDataset("/host-dir/mip_data/item_placement/train", augment=True)
-    # val_dataset = ItemPlacementDataset("/host-dir/mip_data/item_placement/valid")
+    train_dataset = ItemPlacementDataset("/host-dir/mip_data/item_placement/train")
+    val_dataset = ItemPlacementDataset("/host-dir/mip_data/item_placement/valid")
 
     train_dataloader = create_data_loader(train_dataset)
     validation_dataloader = create_data_loader(val_dataset)
@@ -154,7 +154,6 @@ def train(train_steps, network, optimizer, train_dataloader, dataset):
             total_loss_c = 0
             for asn in outputs:
                 l, loss_c, loss_o, best_logit_map = sum_loss(asn, batch_holder)
-                # l, best_logit_map = combined_loss(asn, batch_holder)
                 loss += l
                 total_loss_o += loss_o
                 total_loss_c += loss_c
@@ -196,7 +195,7 @@ def combined_loss(asn, batch_holder):
 
     # TODO: If no objective, optimize constraint loss directly
     obj_multipliers = torch.unsqueeze(batch_holder.objective_multipliers, dim=-1)
-    total_loss = (asn - torch.sqrt(loss_per_var)) * obj_multipliers
+    total_loss = (asn + torch.sqrt(loss_per_var)) * obj_multipliers
 
     per_graph_loss = torch.sparse.mm(batch_holder.vars_inst_graph.t(), total_loss)
     best_logit_map = torch.argmin(torch.sum(per_graph_loss, dim=0))
@@ -240,7 +239,8 @@ def sum_loss_meanscaled(asn, batch_holder):
                                            size=batch_holder.vars_obj_graph.size(),
                                            device=batch_holder.vars_obj_graph.device)
     scalers2_o = torch.sparse.sum(ones_graph_o, dim=0).to_dense()
-    loss_o_scaled = loss_o * torch.unsqueeze(scalers2_o / torch.maximum(scalers1_o, torch.ones_like(scalers1_o)),dim=-1)
+    loss_o_scaled = loss_o * torch.unsqueeze(scalers2_o / torch.maximum(scalers1_o, torch.ones_like(scalers1_o)),
+                                             dim=-1)
 
     per_graph_loss = loss_c + loss_o_scaled * params.objective_loss_scale
     best_logit_map = torch.argmin(torch.sum(per_graph_loss, dim=0))

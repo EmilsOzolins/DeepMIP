@@ -205,8 +205,8 @@ class MIPInstance:
 
     def augment(self):
         for i in range(self._augment_steps):
-            # self.drop_random_constraints()
-            self.fix_random_variables()
+            self.drop_random_constraints()
+            # self.fix_random_variables()
 
         return self
 

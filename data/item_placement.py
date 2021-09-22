@@ -6,15 +6,17 @@ import pickle
 from pathlib import Path
 from typing import List, Dict
 
+import mip
 import numpy as np
 import torch
+from mip import Model
 from torch.utils.data import Dataset
 
 from data.datasets_base import MIPDataset
 from data.mip_instance import MIPInstance
 from metrics.general_metrics import Metrics
 from metrics.mip_metrics import MIPMetrics, MIPMetrics_train
-from utils.data import MIPBatchHolder, InputDataHolder
+from utils.data import InputDataHolder
 
 
 class ItemPlacementDataset(MIPDataset, Dataset):
@@ -23,7 +25,7 @@ class ItemPlacementDataset(MIPDataset, Dataset):
     """
 
     def __init__(self, data_folder, augment: bool = False, cache_dir="/tmp/cache/item_placement") -> None:
-        self._instances = glob.glob(data_folder + "/*.npz")
+        self._instances = glob.glob(data_folder + "/*.lp")
         self._should_augment = augment
         self._cache_dir = Path(cache_dir)
 
@@ -65,65 +67,71 @@ class ItemPlacementDataset(MIPDataset, Dataset):
 
         if self._in_cache[index]:
             with gzip.open(cached_file) as file:
-                mip = pickle.load(file)
+                ip = pickle.load(file)
         elif cached_file.exists():
             self._in_cache[index] = True
             with gzip.open(cached_file) as file:
-                mip = pickle.load(file)
+                ip = pickle.load(file)
         else:
-            mip = self.get_mip_instance(file_name)
+            ip = self.get_mip_instance(file_name)
             with gzip.open(cached_file, mode="wb") as file:
-                pickle.dump(mip, file)
+                pickle.dump(ip, file)
 
             self._in_cache[index] = True
 
-        return {"mip": mip.augment() if self._should_augment else mip,
+        return {"mip": ip.augment() if self._should_augment else ip,
                 "optimal_solution": torch.as_tensor([float('nan')], dtype=torch.float32)}
 
     @staticmethod
     def get_mip_instance(file_name: str):
-        data = np.load(file_name)
+        model = Model()
+        model.read(file_name)
 
-        # Matches https://doc.ecole.ai/py/en/stable/reference/observations.html#ecole.observation.NodeBipartiteObs.ColumnFeatures
-        variables_features = data["variables_features"]
+        variables = model.vars
+        variable_count = len(variables)
+        variable_map = {var: idx for idx, var in enumerate(variables)}
 
-        # Matches https://doc.ecole.ai/py/en/stable/reference/observations.html#ecole.observation.NodeBipartiteObs.RowFeatures
-        constraints_features = data["constraints_features"]
+        ip = MIPInstance(variable_count)
 
-        edges = data["edges"].astype(np.int64)
-        edge_values = data["edge_values"]
-        graph_shape = data["graph_shape"]
-        # variables_lbs = data["variables_lbs"]
-        # variables_ubs = data["variables_ubs"]
+        for const in model.constrs:
+            const_exp = const.expr  # type: mip.LinExpr
 
-        integer_variables = variables_features[:, 2]
-        binary_variables = variables_features[:, 1]
-        obj_multipliers = variables_features[:, 0]
-        bias_values = constraints_features[:, 0]
-        const_count, var_count = graph_shape
+            var_indices = [variable_map[var] for var in const_exp.expr.keys()]
+            coefficients = [float(c) for c in const_exp.expr.values()]
+            rhs = const.rhs
 
-        constraints = [([], []) for _ in range(const_count)]
+            if const_exp.sense == "=":
+                ip.equal(var_indices, coefficients, rhs)
+            elif const_exp.sense == "<":
+                ip.less_or_equal(var_indices, coefficients, rhs)
+            elif const_exp.sense == ">":
+                ip.greater_or_equal(var_indices, coefficients, rhs)
+            else:
+                raise RuntimeError("Something is wrong, sense not found!")
 
-        for (c_id, var_id), val in zip(np.transpose(edges), edge_values):
-            constraints[c_id][0].append(var_id)
-            constraints[c_id][1].append(val)
+        objective = model.objective
 
-        mip = MIPInstance(var_count)
+        var_indices = [variable_map[var] for var in objective.expr.keys()]
+        coefficients = [float(c) for c in objective.expr.values()]
 
-        for const, bias in zip(constraints, bias_values):
-            mip.less_or_equal(const[0], const[1], bias)
+        if model.sense == 'MIN':
+            ip = ip.minimize_objective(var_indices, coefficients)
+        elif model.sense == 'Max':
+            ip = ip.maximize_objective(var_indices, coefficients)
+        else:
+            raise RuntimeError("Model sense not found!")
 
-        # for vid, lb in enumerate(variables_lbs):
-        #     mip.greater_or_equal([vid],[1], lb)
-        #
-        # for vid, ub in enumerate(variables_ubs):
-        #     mip.less_or_equal([vid],[1], ub)
+        int_vars = [var for var in variables if var.var_type in {'B', 'I'}]
+        real_vars = [var for var in variables if var.var_type == 'C']
 
-        mip.minimize_objective([i for i in range(var_count)], obj_multipliers)
-        int_constraints = [i for i, (bv, iv) in enumerate(zip(integer_variables, binary_variables)) if bv or iv]
-        mip.integer_constraint(int_constraints)
+        integer_vars = [variable_map[var] for var in int_vars]
+        ip = ip.integer_constraint(integer_vars)
 
-        return mip
+        for var in real_vars:
+            ip = ip.less_or_equal([variable_map[var]], [1], var.ub)
+            ip = ip.greater_or_equal([variable_map[var]], [1], var.lb)
+
+        return ip
 
     def __len__(self) -> int:
         return len(self._instances)
