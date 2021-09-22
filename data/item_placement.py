@@ -9,7 +9,7 @@ from typing import List, Dict
 import mip
 import numpy as np
 import torch
-from mip import Model
+from mip import Model, OptimizationStatus
 from torch.utils.data import Dataset
 
 from data.datasets_base import MIPDataset
@@ -80,7 +80,7 @@ class ItemPlacementDataset(MIPDataset, Dataset):
             self._in_cache[index] = True
 
         return {"mip": ip.augment() if self._should_augment else ip,
-                "optimal_solution": torch.as_tensor([float('nan')], dtype=torch.float32)}
+                "optimal_solution": ip.objective_value}
 
     @staticmethod
     def get_mip_instance(file_name: str):
@@ -107,7 +107,7 @@ class ItemPlacementDataset(MIPDataset, Dataset):
             elif const_exp.sense == ">":
                 ip.greater_or_equal(var_indices, coefficients, rhs)
             else:
-                raise RuntimeError("Something is wrong, sense not found!")
+                raise RuntimeError("Constraint sense not found! Please check your MIP file.")
 
         objective = model.objective
 
@@ -119,7 +119,7 @@ class ItemPlacementDataset(MIPDataset, Dataset):
         elif model.sense == 'Max':
             ip = ip.maximize_objective(var_indices, coefficients)
         else:
-            raise RuntimeError("Model sense not found!")
+            raise RuntimeError("Model sense not found! Please check your MIP file.")
 
         int_vars = [var for var in variables if var.var_type in {'B', 'I'}]
         real_vars = [var for var in variables if var.var_type == 'C']
@@ -130,6 +130,14 @@ class ItemPlacementDataset(MIPDataset, Dataset):
         for var in real_vars:
             ip = ip.less_or_equal([variable_map[var]], [1], var.ub)
             ip = ip.greater_or_equal([variable_map[var]], [1], var.lb)
+
+        model.preprocess = 0
+        model.verbose = 0
+        status = model.optimize(max_seconds=2)
+        if status not in {OptimizationStatus.OPTIMAL, OptimizationStatus.FEASIBLE}:
+            raise RuntimeError("Solution not find in the time limit!")
+
+        ip = ip.presolved_objective_value(float(model.objective_value))
 
         return ip
 

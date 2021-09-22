@@ -26,6 +26,7 @@ class MIPInstance:
         self._drop_percentage = 0.05
         self._fix_percentage = 0.05
         self._augment_steps = 1
+        self._presolved_obj_value = float('nan')
 
     def greater_or_equal(self, variable_indices: List[int],
                          variable_multipliers: List[float],
@@ -111,6 +112,13 @@ class MIPInstance:
         """ Variables with this constraint will be integers. Rest of the variables will be floats.
         """
         self._integer_indices.update(variable_indices)
+        return self
+
+    def presolved_objective_value(self, objective_value: float):
+        """ Stores scalar value of found objective value. You can use classical solver (e.g., SCIP) to find solution.
+        WARNING! This is not guaranteed to be objective value of optimal solution.
+        """
+        self._presolved_obj_value = objective_value
         return self
 
     def drop_random_constraints(self):
@@ -272,3 +280,7 @@ class MIPInstance:
     @property
     def integer_variables(self):
         return torch.as_tensor(list(self._integer_indices), dtype=torch.int64)
+
+    @property
+    def objective_value(self):
+        return torch.as_tensor([self._presolved_obj_value], dtype=torch.float32)
