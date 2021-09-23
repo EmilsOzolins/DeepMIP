@@ -21,7 +21,7 @@ class MIPNetwork(torch.nn.Module):
 
         self.constraint_update = nn.Sequential(
             nn.Linear(self.feature_maps * 3, self.feature_maps),
-            PairNorm(),
+            PairNorm(subtract_mean=False),
             nn.ReLU(),
             nn.Linear(self.feature_maps, self.feature_maps * 2),
         )
@@ -34,7 +34,7 @@ class MIPNetwork(torch.nn.Module):
 
         self.variable_update = nn.Sequential(
             nn.Linear(self.feature_maps * 3 + 1, self.feature_maps),
-            PairNorm(),
+            PairNorm(subtract_mean=False),
             nn.ReLU(),
             nn.Linear(self.feature_maps, self.feature_maps),
         )
