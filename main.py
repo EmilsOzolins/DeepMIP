@@ -59,7 +59,8 @@ def main():
     # train_dataset = LoadBalancingDataset("/host-dir/mip_data/load_balancing/train")
     # val_dataset = LoadBalancingDataset("/host-dir/mip_data/load_balancing/valid")
 
-    # train_dataset = ItemPlacementDataset("/host-dir/mip_data/item_placement/train")
+    # train_dataset = ItemPlacementDataset("/host-dir/mip_data/item_placement/train_augment")
+    # train_dataset = train_dataset + ItemPlacementDataset("/host-dir/mip_data/item_placement/train")
     # val_dataset = ItemPlacementDataset("/host-dir/mip_data/item_placement/valid")
 
     train_dataloader = create_data_loader(train_dataset)

@@ -33,14 +33,6 @@ class ItemPlacementDataset(MIPDataset, Dataset):
         if not self._cache_dir.exists():
             self._cache_dir.mkdir(parents=True)
 
-        # Shared array between workers
-        shared_array_base = mp.Array(ctypes.c_bool, len(self._instances))
-        shared_array = np.ctypeslib.as_array(shared_array_base.get_obj())
-        self._in_cache = shared_array.reshape(len(self._instances))
-
-        for idx in range(len(self._in_cache)):
-            self._in_cache[idx] = False
-
     @property
     def required_output_bits(self):
         return 1
@@ -66,10 +58,7 @@ class ItemPlacementDataset(MIPDataset, Dataset):
 
         cached_file = self._cache_dir / name
 
-        if self._in_cache[index]:
-            with gzip.open(cached_file) as file:
-                ip = pickle.load(file)
-        elif cached_file.exists():
+        if cached_file.exists():
             self._in_cache[index] = True
             with gzip.open(cached_file) as file:
                 ip = pickle.load(file)
@@ -96,7 +85,7 @@ class ItemPlacementDataset(MIPDataset, Dataset):
 
         variables = model.vars
         variables_not_in_prob = set(variables).difference(vars_in_prob)
-        model.remove(list(variables_not_in_prob))
+        model.remove(list(variables_not_in_prob))  # Make instances smaller by removing redundant variables
         variables = model.vars
 
         variable_count = len(variables)
