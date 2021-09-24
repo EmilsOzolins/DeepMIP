@@ -88,7 +88,17 @@ class ItemPlacementDataset(MIPDataset, Dataset):
         model = Model()
         model.read(file_name)
 
+        vars_in_prob = set()
+        vars_in_prob.update(model.objective.expr.keys())
+        for const in model.constrs:
+            const_exp = const.expr  # type: mip.LinExpr
+            vars_in_prob.update(const_exp.expr.keys())
+
         variables = model.vars
+        variables_not_in_prob = set(variables).difference(vars_in_prob)
+        model.remove(list(variables_not_in_prob))
+        variables = model.vars
+
         variable_count = len(variables)
         variable_map = {var: idx for idx, var in enumerate(variables)}
 
@@ -146,3 +156,7 @@ class ItemPlacementDataset(MIPDataset, Dataset):
 
     def __len__(self) -> int:
         return len(self._instances)
+
+    def __add__(self, other: 'ItemPlacementDataset') -> 'ItemPlacementDataset':
+        self._instances += other._instances
+        return self
