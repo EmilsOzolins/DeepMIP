@@ -3,6 +3,7 @@ import glob
 import gzip
 import multiprocessing as mp
 import pickle
+import warnings
 from pathlib import Path
 from typing import List, Dict
 
@@ -116,7 +117,7 @@ class ItemPlacementDataset(MIPDataset, Dataset):
 
         if model.sense == 'MIN':
             ip = ip.minimize_objective(var_indices, coefficients)
-        elif model.sense == 'Max':
+        elif model.sense == 'MAX':
             ip = ip.maximize_objective(var_indices, coefficients)
         else:
             raise RuntimeError("Model sense not found! Please check your MIP file.")
@@ -133,11 +134,13 @@ class ItemPlacementDataset(MIPDataset, Dataset):
 
         model.preprocess = 0
         model.verbose = 0
+        model.emphasis = 1  # prioritize feasible solutions
         status = model.optimize(max_seconds=2)
         if status not in {OptimizationStatus.OPTIMAL, OptimizationStatus.FEASIBLE}:
-            raise RuntimeError("Solution not find in the time limit!")
-
-        ip = ip.presolved_objective_value(float(model.objective_value))
+            warnings.warn("Solution not found in the time limit, will use nan as objective.")
+            ip = ip.presolved_objective_value(float('nan'))
+        else:
+            ip = ip.presolved_objective_value(float(model.objective_value))
 
         return ip
 
