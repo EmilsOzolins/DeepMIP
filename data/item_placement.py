@@ -1,14 +1,11 @@
-import ctypes
 import glob
 import gzip
-import multiprocessing as mp
 import pickle
 import warnings
 from pathlib import Path
 from typing import List, Dict
 
 import mip
-import numpy as np
 import torch
 from mip import Model, OptimizationStatus
 from torch.utils.data import Dataset
@@ -25,10 +22,12 @@ class ItemPlacementDataset(MIPDataset, Dataset):
     WARNING: Files are cached on disk! If any changes are made cache should be deleted manually.
     """
 
-    def __init__(self, data_folder, augment: bool = False, cache_dir="/tmp/cache/item_placement") -> None:
+    def __init__(self, data_folder, find_solutions=False,
+                 augment: bool = False, cache_dir="/tmp/cache/item_placement") -> None:
         self._instances = glob.glob(data_folder + "/*.lp")
         self._should_augment = augment
         self._cache_dir = Path(cache_dir)
+        self._find_solutions = find_solutions
 
         if not self._cache_dir.exists():
             self._cache_dir.mkdir(parents=True)
@@ -59,7 +58,6 @@ class ItemPlacementDataset(MIPDataset, Dataset):
         cached_file = self._cache_dir / name
 
         if cached_file.exists():
-            self._in_cache[index] = True
             with gzip.open(cached_file) as file:
                 ip = pickle.load(file)
         else:
@@ -67,13 +65,10 @@ class ItemPlacementDataset(MIPDataset, Dataset):
             with gzip.open(cached_file, mode="wb") as file:
                 pickle.dump(ip, file)
 
-            self._in_cache[index] = True
-
         return {"mip": ip.augment() if self._should_augment else ip,
                 "optimal_solution": ip.objective_value}
 
-    @staticmethod
-    def get_mip_instance(file_name: str):
+    def get_mip_instance(self, file_name: str):
         model = Model()
         model.read(file_name)
 
@@ -122,24 +117,27 @@ class ItemPlacementDataset(MIPDataset, Dataset):
             raise RuntimeError("Model sense not found! Please check your MIP file.")
 
         int_vars = [var for var in variables if var.var_type in {'B', 'I'}]
-        real_vars = [var for var in variables if var.var_type == 'C']
-
         integer_vars = [variable_map[var] for var in int_vars]
         ip = ip.integer_constraint(integer_vars)
 
-        for var in real_vars:
-            ip = ip.less_or_equal([variable_map[var]], [1], var.ub)
-            ip = ip.greater_or_equal([variable_map[var]], [1], var.lb)
+        for var in variables:
+            ip = ip.variable_lower_bound(variable_map[var], var.lb)
+            ip = ip.variable_upper_bound(variable_map[var], var.ub)
 
-        model.preprocess = 0
-        model.verbose = 0
-        model.emphasis = 1  # prioritize feasible solutions
-        status = model.optimize(max_seconds=2)
-        if status not in {OptimizationStatus.OPTIMAL, OptimizationStatus.FEASIBLE}:
-            warnings.warn("Solution not found in the time limit, will use nan as objective.")
-            ip = ip.presolved_objective_value(float('nan'))
+        if self._find_solutions:
+            model.preprocess = 0
+            model.verbose = 0
+            model.emphasis = 1  # prioritize feasible solutions
+            status = model.optimize(max_seconds=2)
+
+            if status in {OptimizationStatus.OPTIMAL, OptimizationStatus.FEASIBLE}:
+                obj_value = model.objective_value
+            else:
+                warnings.warn("Solution not found in the time limit, will use nan as objective.")
+                obj_value = 'nan'
+            ip.presolved_objective_value(float(obj_value))
         else:
-            ip = ip.presolved_objective_value(float(model.objective_value))
+            ip = ip.presolved_objective_value(float('nan'))
 
         return ip
 

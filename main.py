@@ -44,9 +44,9 @@ def main():
     # train_dataset = IntegerSudokuDataset(sudoku_train_data)
     # val_dataset = IntegerSudokuDataset(sudoku_val_data)
     #
-    test_dataset = BinaryKnapsackDataset(2, 20)
-    train_dataset = BinaryKnapsackDataset(2, 20)
-    val_dataset = BinaryKnapsackDataset(2, 20)
+    # test_dataset = BinaryKnapsackDataset(2, 20)
+    # train_dataset = BinaryKnapsackDataset(2, 20)
+    # val_dataset = BinaryKnapsackDataset(2, 20)
     #
     # test_dataset = ConstrainedBinaryKnapsackDataset(2, 20)
     # train_dataset = ConstrainedBinaryKnapsackDataset(2, 20)
@@ -59,9 +59,10 @@ def main():
     # train_dataset = LoadBalancingDataset("/host-dir/mip_data/load_balancing/train")
     # val_dataset = LoadBalancingDataset("/host-dir/mip_data/load_balancing/valid")
 
-    # train_dataset = ItemPlacementDataset("/host-dir/mip_data/item_placement/train_augment")
+    train_dataset = ItemPlacementDataset("/host-dir/mip_data/item_placement/train_augment")
+    # train_dataset = ItemPlacementDataset("/host-dir/mip_data/item_placement/train_augment_10_100")
     # train_dataset = train_dataset + ItemPlacementDataset("/host-dir/mip_data/item_placement/train")
-    # val_dataset = ItemPlacementDataset("/host-dir/mip_data/item_placement/valid")
+    val_dataset = ItemPlacementDataset("/host-dir/mip_data/item_placement/valid", find_solutions=True)
 
     train_dataloader = create_data_loader(train_dataset)
     validation_dataloader = create_data_loader(val_dataset)
@@ -280,13 +281,14 @@ def sum_loss_sumscaled(asn_list, batch_holder):
         sorted_loss, _ = torch.sort(per_graph_loss, dim=-1, descending=True)
         per_graph_loss_avg = torch.sum(sorted_loss * costs, dim=-1) / torch.sum(costs)
 
-        sum_loss+= torch.mean(per_graph_loss_avg)
-        sum_loss_c+=torch.mean(loss_c)
-        sum_loss_o+=torch.mean(loss_o)
+        sum_loss += torch.mean(per_graph_loss_avg)
+        sum_loss_c += torch.mean(loss_c)
+        sum_loss_o += torch.mean(loss_o)
 
     best_logit_map = torch.argmin(torch.sum(per_graph_loss, dim=0))
 
     return sum_loss, sum_loss_c, sum_loss_o, best_logit_map
+
 
 def sum_loss(asn_list, batch_holder):
     return sum_loss_sumscaled(asn_list, batch_holder)

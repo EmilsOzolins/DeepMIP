@@ -102,17 +102,20 @@ class MIPInstance:
         self.minimize_objective(variable_indices, variable_multipliers)
         return self
 
-    def less(self):
-        raise NotImplementedError()
-
-    def greater(self):
-        raise NotImplementedError()
-
     def integer_constraint(self, variable_indices: List[int]):
         """ Variables with this constraint will be integers. Rest of the variables will be floats.
         """
         self._integer_indices.update(variable_indices)
         return self
+
+    def variable_lower_bound(self, var_id, lb):
+        self.greater_or_equal([var_id], [1], lb)
+        return self
+
+    def variable_upper_bound(self, var_id, ub):
+        self.less_or_equal([var_id], [1], ub)
+        return self
+
 
     def presolved_objective_value(self, objective_value: float):
         """ Stores scalar value of found objective value. You can use classical solver (e.g., SCIP) to find solution.
