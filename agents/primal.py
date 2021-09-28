@@ -101,7 +101,7 @@ class Instance2Holder(InputDataHolder):
 
         torch_graph = torch.sparse_coo_tensor(indices, values,
                                               size, dtype=torch.float32,
-                                              device=self._device).t()
+                                              device=self._device)
         return torch_graph.coalesce()
 
     @cached_property
@@ -112,7 +112,7 @@ class Instance2Holder(InputDataHolder):
 
         torch_graph = torch.sparse_coo_tensor(indices,
                                               torch.ones_like(values), size,
-                                              dtype=torch.float32, device=self._device).t()
+                                              dtype=torch.float32, device=self._device)
         return torch_graph.coalesce()
 
     @cached_property
@@ -201,7 +201,8 @@ class Policy():
         self.rng = np.random.RandomState(seed)
 
     def __call__(self, action_set, observation):
-        obs_holder = Instance2Holder(observation, self.device)
+        ip = observation  # type: MIPInstance
+        obs_holder = Instance2Holder(ip, self.device)
 
         with torch.no_grad():
             outputs, logits = self.network.forward(obs_holder, self.device)
