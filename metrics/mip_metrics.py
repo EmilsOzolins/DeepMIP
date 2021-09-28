@@ -17,6 +17,7 @@ class MIPMetrics(StackableMetrics):
 
         sat_const = self._satisfied_constraints(prediction, vars_const_graph, const_values)
         max_violation = self._max_constraints(prediction, vars_const_graph, const_values)
+        mean_violation = self._max_constraints(prediction, vars_const_graph, const_values, aggregation_func=torch.mean)
         fully_sat_mips = self._fully_satisfied(prediction, vars_const_graph, const_values, const_inst_graph)
 
         vars_obj_graph = batch_holder.vars_obj_graph
@@ -38,7 +39,8 @@ class MIPMetrics(StackableMetrics):
             max_optimality_gap=max_optimality_gap,
             optimum_found=found_optimum,
             fully_solved=fully_solved,
-            max_violation = max_violation
+            max_violation = max_violation,
+            mean_violation = mean_violation
         )
 
     @property
@@ -105,8 +107,8 @@ class MIPMetrics(StackableMetrics):
         sat_const = self._mask_sat_constraints(const_values, prediction, vars_const_graph)
         return torch.mean(sat_const)
 
-    def _max_constraints(self, prediction, vars_const_graph, const_values):
-        sat_const = self._max_constraint_violation(const_values, prediction, vars_const_graph)
+    def _max_constraints(self, prediction, vars_const_graph, const_values, aggregation_func = torch.max):
+        sat_const = self._max_constraint_violation(const_values, prediction, vars_const_graph, aggregation_func=aggregation_func)
         return sat_const
 
     @staticmethod
@@ -117,9 +119,9 @@ class MIPMetrics(StackableMetrics):
         return sat_const
 
     @staticmethod
-    def _max_constraint_violation(const_values, prediction, vars_const_graph):
+    def _max_constraint_violation(const_values, prediction, vars_const_graph, aggregation_func = torch.max):
         const_left_val = torch.sparse.mm(vars_const_graph.t(), torch.unsqueeze(prediction, dim=-1))
-        sat_const = torch.max(torch.relu(const_left_val - torch.unsqueeze(const_values, dim=-1)))
+        sat_const = aggregation_func(torch.relu(const_left_val - torch.unsqueeze(const_values, dim=-1)))
         sat_const = sat_const.float()
         return sat_const
 
@@ -149,12 +151,14 @@ class MIPMetrics_train(MIPMetrics):
         const_values = batch_holder.const_values
 
         max_violation = self._max_constraints(logits, vars_const_graph, const_values)
+        mean_violation = self._max_constraints(logits, vars_const_graph, const_values, aggregation_func=torch.mean)
         sat_const = self._satisfied_constraints(logits, vars_const_graph, const_values)
         fully_sat_mips = self._fully_satisfied(logits, vars_const_graph, const_values, const_inst_graph)
 
         self._avg.update(
             satisfied_constraints=sat_const,
             fully_satisfied_instances=fully_sat_mips,
-            max_violation = max_violation
+            max_violation = max_violation,
+            mean_violation=mean_violation
         )
 
