@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 
 from model.normalization import NodeNorm
-from utils.data import MIPBatchHolder
+from utils.data_utils import MIPBatchHolder
 
 
 class DisentangledMIPNetwork(torch.nn.Module):

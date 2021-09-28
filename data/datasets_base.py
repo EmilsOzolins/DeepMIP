@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from typing import List
 
 from metrics.general_metrics import Metrics
-from utils.data import MIPBatchHolder
+from utils.data_utils import MIPBatchHolder
 
 
 class MIPDataset(ABC):

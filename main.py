@@ -16,7 +16,7 @@ from data.load_balancing import LoadBalancingDataset
 from metrics.discrete_metrics import DiscretizationMetrics
 from metrics.general_metrics import AverageMetrics, MetricsHandler
 from model.mip_network import MIPNetwork
-from utils.data import batch_data, MIPBatchHolder, sparse_func
+from utils.data_utils import batch_data, MIPBatchHolder, sparse_func
 from utils.visualize import format_metrics
 
 now = dt.now()

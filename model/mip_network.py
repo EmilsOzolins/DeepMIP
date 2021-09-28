@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from model.normalization import NodeNorm, PairNorm
-from utils.data import sparse_func, InputDataHolder
+from utils.data_utils import sparse_func, InputDataHolder
 
 def sample_triangular(shape):
     sample1 = torch.rand(shape).cuda()

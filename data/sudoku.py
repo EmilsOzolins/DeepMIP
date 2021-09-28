@@ -10,7 +10,7 @@ from data.datasets_base import MIPDataset
 from data.mip_instance import MIPInstance
 from metrics.general_metrics import Metrics
 from metrics.sudoku_metrics import SudokuMetrics
-from utils.data import MIPBatchHolder
+from utils.data_utils import MIPBatchHolder
 
 
 class IPSudokuDataset(MIPDataset, Dataset, ABC):

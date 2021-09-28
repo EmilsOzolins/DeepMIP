@@ -1,7 +1,7 @@
 import torch
 
 from metrics.general_metrics import AverageMetrics, StackableMetrics
-from utils.data import MIPBatchHolder
+from utils.data_utils import MIPBatchHolder
 
 
 class SudokuMetrics(StackableMetrics):

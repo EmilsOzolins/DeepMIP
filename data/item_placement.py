@@ -14,7 +14,7 @@ from data.datasets_base import MIPDataset
 from data.mip_instance import MIPInstance
 from metrics.general_metrics import Metrics
 from metrics.mip_metrics import MIPMetrics, MIPMetrics_train
-from utils.data import InputDataHolder
+from utils.data_utils import InputDataHolder
 
 
 class ItemPlacementDataset(MIPDataset, Dataset):
