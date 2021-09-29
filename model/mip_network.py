@@ -20,7 +20,7 @@ class MIPNetwork(torch.nn.Module):
         self.global_step = 0
 
         self.constraint_update = nn.Sequential(
-            nn.Linear(self.feature_maps * 3, self.feature_maps),
+            nn.Linear(self.feature_maps * 2, self.feature_maps),
             PairNorm(subtract_mean=False),
             nn.ReLU(),
             nn.Linear(self.feature_maps, self.feature_maps * 2),
@@ -64,6 +64,7 @@ class MIPNetwork(torch.nn.Module):
         obj_multipliers /= torch.mean(torch.abs(obj_multipliers)) + 1e-6
 
         abs_graph = sparse_func(batch_holder.vars_const_graph, torch.abs)
+        unit_graph = sparse_func(batch_holder.vars_const_graph, torch.sign)
         # unit_graph = make_sparse_unit(batch_holder.vars_const_graph)
         # const_scaler = torch.sqrt(torch.sparse.sum(abs_graph, dim=0).to_dense()) + 1e-6
         # denom = torch.sparse.sum(unit_graph, dim=0).to_dense()+1e-6
@@ -87,18 +88,18 @@ class MIPNetwork(torch.nn.Module):
 
                 left_side_value = torch.sparse.mm(batch_holder.vars_const_graph.t(), query)
                 left_side_value = (left_side_value - const_values) / const_scaler
-                const_loss = torch.relu(left_side_value)
-                const_loss1 = torch.relu(-left_side_value)
+                const_loss = left_side_value
+                #const_loss1 = torch.relu(left_side_value)
 
                 # obj_loss = query * obj_multipliers
                 const_gradient = torch.autograd.grad([const_loss.sum()], [query], retain_graph=True)[0]
                 # const_gradient1 = torch.autograd.grad([const_loss1.sum()], [query], retain_graph=True)[0]
 
-            const_msg = torch.cat([constraints, const_loss, const_loss1], dim=-1)
+            const_msg = torch.cat([constraints, const_loss], dim=-1)
             const_tmp = self.constraint_update(const_msg)
             constraints = const_tmp[:, :self.feature_maps] + 0.5 * constraints
 
-            const2var_msg = torch.sparse.mm(batch_holder.vars_const_graph, const_tmp[:, self.feature_maps:]) / vars_scaler
+            const2var_msg = torch.sparse.mm(unit_graph, const_tmp[:, self.feature_maps:]) / vars_scaler
 
             var_msg = torch.cat([variables, const2var_msg, const_gradient, obj_multipliers], dim=-1)
             variables = self.variable_update(var_msg) + 0.5 * variables
