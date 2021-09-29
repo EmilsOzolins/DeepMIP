@@ -69,75 +69,79 @@ class ItemPlacementDataset(MIPDataset, Dataset):
                 "optimal_solution": ip.objective_value}
 
     def get_mip_instance(self, file_name: str):
-        model = Model()
-        model.read(file_name)
+        try:
+            model = Model()
+            model.read(file_name)
 
-        vars_in_prob = set()
-        vars_in_prob.update(model.objective.expr.keys())
-        for const in model.constrs:
-            const_exp = const.expr  # type: mip.LinExpr
-            vars_in_prob.update(const_exp.expr.keys())
+            vars_in_prob = set()
+            vars_in_prob.update(model.objective.expr.keys())
+            for const in model.constrs:
+                const_exp = const.expr  # type: mip.LinExpr
+                vars_in_prob.update(const_exp.expr.keys())
 
-        variables = model.vars
-        variables_not_in_prob = set(variables).difference(vars_in_prob)
-        model.remove(list(variables_not_in_prob))  # Make instances smaller by removing redundant variables
-        variables = model.vars
+            variables = model.vars
+            variables_not_in_prob = set(variables).difference(vars_in_prob)
+            model.remove(list(variables_not_in_prob))  # Make instances smaller by removing redundant variables
+            variables = model.vars
 
-        variable_count = len(variables)
-        variable_map = {var: idx for idx, var in enumerate(variables)}
+            variable_count = len(variables)
+            variable_map = {var: idx for idx, var in enumerate(variables)}
 
-        ip = MIPInstance(variable_count)
+            ip = MIPInstance(variable_count)
 
-        for const in model.constrs:
-            const_exp = const.expr  # type: mip.LinExpr
+            for const in model.constrs:
+                const_exp = const.expr  # type: mip.LinExpr
 
-            var_indices = [variable_map[var] for var in const_exp.expr.keys()]
-            coefficients = [float(c) for c in const_exp.expr.values()]
-            rhs = const.rhs
+                var_indices = [variable_map[var] for var in const_exp.expr.keys()]
+                coefficients = [float(c) for c in const_exp.expr.values()]
+                rhs = const.rhs
 
-            if const_exp.sense == "=":
-                ip.equal(var_indices, coefficients, rhs)
-            elif const_exp.sense == "<":
-                ip.less_or_equal(var_indices, coefficients, rhs)
-            elif const_exp.sense == ">":
-                ip.greater_or_equal(var_indices, coefficients, rhs)
+                if const_exp.sense == "=":
+                    ip.equal(var_indices, coefficients, rhs)
+                elif const_exp.sense == "<":
+                    ip.less_or_equal(var_indices, coefficients, rhs)
+                elif const_exp.sense == ">":
+                    ip.greater_or_equal(var_indices, coefficients, rhs)
+                else:
+                    raise RuntimeError("Constraint sense not found! Please check your MIP file.")
+
+            objective = model.objective
+
+            var_indices = [variable_map[var] for var in objective.expr.keys()]
+            coefficients = [float(c) for c in objective.expr.values()]
+
+            if model.sense == 'MIN':
+                ip = ip.minimize_objective(var_indices, coefficients)
+            elif model.sense == 'MAX':
+                ip = ip.maximize_objective(var_indices, coefficients)
             else:
-                raise RuntimeError("Constraint sense not found! Please check your MIP file.")
+                raise RuntimeError("Model sense not found! Please check your MIP file.")
 
-        objective = model.objective
+            int_vars = [var for var in variables if var.var_type in {'B', 'I'}]
+            integer_vars = [variable_map[var] for var in int_vars]
+            ip = ip.integer_constraint(integer_vars)
 
-        var_indices = [variable_map[var] for var in objective.expr.keys()]
-        coefficients = [float(c) for c in objective.expr.values()]
+            for var in variables:
+                ip = ip.variable_lower_bound(variable_map[var], var.lb)
+                ip = ip.variable_upper_bound(variable_map[var], var.ub)
 
-        if model.sense == 'MIN':
-            ip = ip.minimize_objective(var_indices, coefficients)
-        elif model.sense == 'MAX':
-            ip = ip.maximize_objective(var_indices, coefficients)
-        else:
-            raise RuntimeError("Model sense not found! Please check your MIP file.")
+            if self._find_solutions:
+                model.preprocess = 0
+                model.verbose = 0
+                model.emphasis = 1  # prioritize feasible solutions
+                status = model.optimize(max_seconds=2)
 
-        int_vars = [var for var in variables if var.var_type in {'B', 'I'}]
-        integer_vars = [variable_map[var] for var in int_vars]
-        ip = ip.integer_constraint(integer_vars)
-
-        for var in variables:
-            ip = ip.variable_lower_bound(variable_map[var], var.lb)
-            ip = ip.variable_upper_bound(variable_map[var], var.ub)
-
-        if self._find_solutions:
-            model.preprocess = 0
-            model.verbose = 0
-            model.emphasis = 1  # prioritize feasible solutions
-            status = model.optimize(max_seconds=2)
-
-            if status in {OptimizationStatus.OPTIMAL, OptimizationStatus.FEASIBLE}:
-                obj_value = model.objective_value
+                if status in {OptimizationStatus.OPTIMAL, OptimizationStatus.FEASIBLE}:
+                    obj_value = model.objective_value
+                else:
+                    warnings.warn(f"Solution not found in the time limit,"
+                                  f" will use nan as objective. Return status was {status}")
+                    obj_value = 'nan'
+                ip.presolved_objective_value(float(obj_value))
             else:
-                warnings.warn("Solution not found in the time limit, will use nan as objective.")
-                obj_value = 'nan'
-            ip.presolved_objective_value(float(obj_value))
-        else:
-            ip = ip.presolved_objective_value(float('nan'))
+                ip = ip.presolved_objective_value(float('nan'))
+        except Exception as ex:
+            raise Exception(f"Please delete {file_name}") from ex
 
         return ip
 
