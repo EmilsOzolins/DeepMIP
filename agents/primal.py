@@ -1,26 +1,14 @@
-from functools import cached_property, lru_cache
-from typing import Any, List
-
+import ecole
 import numpy as np
 import pyscipopt
-import torch
-
-import config as config
-import hyperparams as params
-from data.item_placement import ItemPlacementDataset
-from data.load_balancing import LoadBalancingDataset
-from data.mip_instance import MIPInstance
-from model.mip_network import MIPNetwork
-from utils.data_utils import InputDataHolder
 
 
-class ObservationFunction:  # This allows customizing information received by the solver
+class ObservationFunction():
 
     def __init__(self, problem):
-        super(ObservationFunction, self).__init__()
         # called once for each problem benchmark
         self.problem = problem  # to devise problem-specific observations
-        self.previous_file_name = None
+        self.isFresh = None
 
     def seed(self, seed):
         # called before each episode
@@ -28,184 +16,151 @@ class ObservationFunction:  # This allows customizing information received by th
         pass
 
     def before_reset(self, model):
+        # called when a new episode is about to start
+        self.isFresh = True
+
+    def extract(self, model, done):
+        if done:
+            return None
+
+        m = model.as_pyscipopt()
+        variables = m.getVars(transformed=True)
+
+        observation = (model, self.isFresh, variables)
+        self.isFresh = False
+        return observation
+
+
+class ObservationFunction_inner():
+
+    def __init__(self):
+        # called once for each problem benchmark
+        pass
+
+    def seed(self, seed):
+        # called before each episode
+        # use this seed to make your code deterministic
+        pass
+
+    def before_reset(self, model):
+        # called when a new episode is about to start
         pass
 
     def extract(self, model, done):
-        m = model.as_pyscipopt()  # type: pyscipopt.scip.Model
+        if done:
+            return None
 
-        variables = m.getVars(transformed=True)  # type: List[pyscipopt.scip.Variable]
-        var2id = {var.name: idx for idx, var in enumerate(variables)}
+        m = model.as_pyscipopt()
+        obj_val = m.getObjVal()
+        sol = m.getBestSol()
 
-        constraints = m.getLPRowsData()  # type: List[pyscipopt.scip.Row]
-        constraints = [c for c in constraints if not c.isRemovable()]
-        # TODO: Filter ones where all variables are set by bounds
+        observation = (sol, obj_val)
+        return observation
 
-        ip = MIPInstance()
 
-        for const in constraints:
-            c_mul = const.getVals()
-            columns = const.getCols()  # type: List[pyscipopt.scip.Column]
-            c_vars = [c.getVar() for c in columns]
-            c_var_ids = [var2id[v.name] for v in c_vars]
+class SearchDynamics(ecole.dynamics.PrimalSearchDynamics):
 
-            lhs = const.getLhs()
-            rhs = const.getRhs()
+    def __init__(self, trials_per_node=1, depth_freq=1, depth_start=0, depth_stop=-1):
+        super().__init__(trials_per_node, depth_freq, depth_start, depth_stop)
 
-            if lhs == rhs:
-                ip.equal(c_var_ids, c_mul, lhs)
-            elif lhs < rhs:
-                ip.greater_or_equal(c_var_ids, c_mul, lhs)
-            elif rhs > lhs:
-                ip.less_or_equal(c_var_ids, c_mul, rhs)
+
+class SCIPEnvironment(ecole.environment.PrimalSearch):
+    __Dynamics__ = SearchDynamics
+
+    def reset(self, instance, *dynamics_args, **dynamics_kwargs):
+        self.can_transition = True
+        try:
+            self.model = ecole.core.scip.Model.from_pyscipopt(instance)
+            self.model.as_pyscipopt().setHeuristics(
+                pyscipopt.scip.PY_SCIP_PARAMSETTING.AGGRESSIVE)  # we want to focus on finding feasible solutions
+            self.model.set_params(self.scip_params)
+            self.model.disable_presolve()
+
+            self.dynamics.set_dynamics_random_state(self.model, self.random_engine)
+
+            # Reset data extraction functions
+            self.reward_function.before_reset(self.model)
+            self.observation_function.before_reset(self.model)
+            self.information_function.before_reset(self.model)
+
+            # Place the environment in its initial state
+            done, action_set = self.dynamics.reset_dynamics(
+                self.model, *dynamics_args, **dynamics_kwargs
+            )
+            self.can_transition = not done
+
+            # Extract additional information to be returned by reset
+            reward_offset = self.reward_function.extract(self.model, done)
+            if not done:
+                observation = self.observation_function.extract(self.model, done)
             else:
-                raise RuntimeError("Something is wrong with left or right side values!")
+                observation = None
+            information = self.information_function.extract(self.model, done)
 
-        sense = m.getObjectiveSense()
-        objective = m.getObjective()  # type: pyscipopt.scip.Expr
-        obj_exp = [(m.getTransformedVar(term.vartuple[0]), mul) for term, mul in objective.terms.items()]
-        obj_exp = [(var2id[var.name], mul) for var, mul in obj_exp]
-
-        objective_indices = [x for x, _ in obj_exp]
-        objective_mul = [float(m) for _, m in obj_exp]
-
-        if sense == "minimize":
-            ip.minimize_objective(objective_indices, objective_mul)
-        elif sense == "maximize":
-            ip.maximize_objective(objective_indices, objective_mul)
-        else:
-            raise RuntimeError(f"Unknown sense direction! Expected 'maximize/minimize' but found {sense}")
-
-        int_vars = [var2id[var.name] for var in variables if var.vtype() in {"BINARY", "INTEGER"}]
-        ip.integer_constraint(int_vars)
-
-        for var in variables:
-            ip.variable_lower_bound(var2id[var.name], var.getLbLocal())
-            ip.variable_lower_bound(var2id[var.name], var.getLbLocal())
-
-        return ip
-
-
-class Instance2Holder(InputDataHolder):
-
-    def __init__(self, ip: MIPInstance, device: torch.device, **other_data) -> None:
-        super().__init__()
-        self._ip = ip
-        self._device = device
-        self._other_data = other_data
-
-    @cached_property
-    def vars_const_graph(self) -> torch.sparse.Tensor:
-        indices = self._ip.variables_constraints_graph
-        values = self._ip.variables_constraints_values
-        size = self._ip.variables_constraints_graph_size
-
-        torch_graph = torch.sparse_coo_tensor(indices, values,
-                                              size, dtype=torch.float32,
-                                              device=self._device)
-        return torch_graph.coalesce()
-
-    @cached_property
-    def binary_vars_const_graph(self) -> torch.sparse.Tensor:
-        indices = self._ip.variables_constraints_graph
-        values = self._ip.variables_constraints_values
-        size = self._ip.variables_constraints_graph_size
-
-        torch_graph = torch.sparse_coo_tensor(indices,
-                                              torch.ones_like(values), size,
-                                              dtype=torch.float32, device=self._device)
-        return torch_graph.coalesce()
-
-    @cached_property
-    def const_values(self) -> torch.Tensor:
-        rhs = self._ip.right_values_of_constraints
-        return torch.as_tensor(rhs, device=self._device, dtype=torch.float32)
-
-    @cached_property
-    def vars_obj_graph(self) -> torch.sparse.Tensor:
-        indices = self._ip.variables_objective_graph
-        values = self._ip.variables_objective_graph_values
-        var_count, _ = self._ip.variables_constraints_graph_size
-
-        return torch.sparse_coo_tensor(indices, values, size=[var_count, 1], device=self._device).coalesce()
-
-    @cached_property
-    def const_inst_graph(self) -> torch.sparse.Tensor:
-        indices = self._ip.constraints_instance_graph
-        values = self._ip.constraints_instance_graph_values
-        _, const_count = self._ip.variables_constraints_graph_size
-
-        return torch.sparse_coo_tensor(indices, values, size=[const_count, 1], device=self._device).coalesce()
-
-    @cached_property
-    def vars_inst_graph(self) -> torch.sparse.Tensor:
-        indices = self._ip.variables_instance_graph
-        values = self._ip.variables_instance_graph_values
-        var_count, _ = self._ip.variables_constraints_graph_size
-
-        return torch.sparse_coo_tensor(indices, values, size=[var_count, 1], device=self._device).coalesce()
-
-    @cached_property
-    def optimal_solution(self) -> torch.Tensor:
-        return torch.tensor([float("nan")], device=self._device, dtype=torch.float32)
-
-    @cached_property
-    def integer_mask(self) -> torch.Tensor:
-        var_count, const_count = self._ip.variables_constraints_graph_size
-        mask = torch.zeros([var_count], device=self._device)
-        indices = self._ip.integer_variables.to(device=self._device)
-        return torch.scatter(mask, dim=0, index=indices, value=1.0)
-
-    @cached_property
-    def objective_multipliers(self) -> torch.Tensor:
-        var_count = self.vars_obj_graph.size(0)
-
-        if self.vars_obj_graph._nnz() == 0:
-            return torch.zeros([var_count], device=self._device)
-
-        return torch.sparse.sum(self.vars_obj_graph, dim=-1).to_dense()
-
-    @lru_cache(maxsize=None)
-    def get_data(self, *keys: str) -> Any:
-        data = [self._other_data[k] for k in keys]
-        data = [x.to(device=self._device) if isinstance(x, torch.Tensor) else x for x in data]
-
-        return data if len(data) > 1 else data[0]
+            return observation, action_set, reward_offset, done, information
+        except Exception as e:
+            self.can_transition = False
+            raise e
 
 
 class Policy():
+
     def __init__(self, problem):
         # called once for each problem benchmark
         self.rng = np.random.RandomState()
         self.problem = problem  # to devise problem-specific policies
-
-        self.device = torch.device(config.device)
-        self.network = MIPNetwork(
-            output_bits=params.output_bits,
-            feature_maps=params.feature_maps,
-            pass_steps=params.recurrent_steps,
-            summary=None
-        )
-        run_name = "20210927-155836"
-        checkpoint = torch.load(f"/host-dir/mip_models/{run_name}/model.pth")
-
-        self.network.load_state_dict(checkpoint["model_state_dict"])
-        self.network.eval()
-        self.network.to(self.device)
-
-        self.dataset = ItemPlacementDataset(
-            "/host-dir/") if self.problem == "item_placement" else LoadBalancingDataset("/host-dir/")
+        self.env = None
+        self.m = None
 
     def seed(self, seed):
         # called before each episode
         # use this seed to make your code deterministic
         self.rng = np.random.RandomState(seed)
 
-    def __call__(self, action_set, observation):
-        ip = observation  # type: MIPInstance
-        obs_holder = Instance2Holder(ip, self.device)
+    def __call__(self, action_vars_in, observation):
+        model, m_isfresh, vars_orig = observation
 
-        with torch.no_grad():
-            outputs, logits = self.network.forward(obs_holder, self.device)
-        output = self.dataset.decode_model_outputs(outputs[-1], obs_holder)
+        # reset solution improvement and solving time counters for freshly created models
+        if m_isfresh:
+            m_orig = model.as_pyscipopt()
+            remaining_time_budget = m_orig.getParam("limits/time") - m_orig.getSolvingTime()
+            # print("remaining_time_budget", remaining_time_budget)
+            model_copy = pyscipopt.Model(sourceModel=m_orig)
+            model_copy.setPresolve(pyscipopt.scip.PY_SCIP_PARAMSETTING.OFF)  # presolve has already been done
+            # we want to focus on finding feasible solutions
+            model_copy.setHeuristics(pyscipopt.scip.PY_SCIP_PARAMSETTING.AGGRESSIVE)
 
-        return action_set, output[np.int64(action_set)].cpu().numpy()
+            env = SCIPEnvironment(observation_function=ObservationFunction_inner())
+            obs, self.action_set, _, self.done, info = env.reset(model_copy)
+            self.m = env.model.as_pyscipopt()
+            # we want to focus on finding feasible solutions
+            self.m.setHeuristics(pyscipopt.scip.PY_SCIP_PARAMSETTING.AGGRESSIVE)
+
+            # stop the agent before the environment times out
+            self.m.setParam('limits/time', max(remaining_time_budget - 0.01, 0))
+            self.env = env
+            self.reported_bound = self.env.model.primal_bound
+
+        while self.env.model.primal_bound >= self.reported_bound and not self.done:
+            policy_action = ([], [])  # todo our policy
+            # print(len(self.action_set))
+            obs, self.action_set, _, self.done, info = self.env.step(policy_action)
+
+        # keep track of best sol improvements in the copied model to be able to set a limit
+
+        # keep track of solving time already spedn in the model to be able to increment it appropriately
+        self.solving_time_consumed = self.m.getSolvingTime()
+        self.reported_bound = self.env.model.primal_bound
+
+        if self.done:
+            print(f"done in {self.m.getSolvingTime()} sec.")
+            return [], []
+
+        sol, obj_val = obs
+        # print('nSols', self.m.getNSols())
+        print(f"{self.m.getSolvingTime()} seconds spend searching, best solution so far {obj_val}")
+        # sol_vals = np.asarray([sol[var] for var in vars_orig])
+        sol_vals = np.asarray([self.m.getSolVal(sol, var) for var in self.m.getVars(transformed=False)])
+        action = (action_vars_in, sol_vals[action_vars_in])
+
+        return action
