@@ -15,72 +15,6 @@ from data.mip_instance import MIPInstance
 from model.mip_network import MIPNetwork
 from utils.data_utils import InputDataHolder
 
-map_var_type = {
-    "BINARY": mip.BINARY,
-    "INTEGER": mip.INTEGER,
-    "CONTINUOUS": mip.CONTINUOUS
-}
-
-
-def save_current_ip_instance(model, file_name: str) -> MIPInstance:
-    m = model.as_pyscipopt()  # type: pyscipopt.scip.Model
-    variables = m.getVars(transformed=True)  # type: List[pyscipopt.scip.Variable]
-
-    mip_model = Model()
-
-    var2var = {}
-    for var in variables:
-        mip_var = mip_model.add_var(var.name, var.getLbLocal(), var.getUbLocal(), var_type=map_var_type[var.vtype()])
-        var2var[var.name] = mip_var
-
-    constraints = m.getLPRowsData()  # type: List[pyscipopt.scip.Row]
-    constraints = [c for c in constraints if not c.isRemovable()]
-
-    for const in constraints:
-        c_mul = const.getVals()
-        columns = const.getCols()  # type: List[pyscipopt.scip.Column]
-        c_vars = [c.getVar() for c in columns]
-
-        all_vars_set = all([v.getLbLocal() == v.getUbLocal() for v in c_vars])
-
-        if all_vars_set:
-            continue
-
-        c_var_ids = [var2var[v.name] for v in c_vars]
-
-        lhs = const.getLhs()
-        rhs = const.getRhs()
-
-        left_value = xsum(v * m for v, m in zip(c_var_ids, c_mul))
-
-        if lhs == rhs:
-            mip_constraint = left_value == lhs
-        elif lhs < rhs:
-            mip_constraint = left_value >= lhs
-        elif rhs > lhs:
-            mip_constraint = left_value <= rhs
-        else:
-            raise RuntimeError("Something is wrong with left or right side values!")
-
-        mip_model.add_constr(mip_constraint)
-
-    sense = m.getObjectiveSense()
-    objective = m.getObjective()  # type: pyscipopt.scip.Expr
-    obj_exp = [(m.getTransformedVar(term.vartuple[0]), mul) for term, mul in objective.terms.items()]
-    obj_exp = [(var2var[var.name], mul) for var, mul in obj_exp]
-
-    mip_model.objective = xsum(v * m for v, m in obj_exp)
-
-    if sense == "minimize":
-        mip_model.sense = "MINIMIZE"
-    elif sense == "maximize":
-        mip_model.sense = "MAXIMIZE"
-    else:
-        raise RuntimeError(f"Unknown sense direction! Expected 'maximize/minimize' but found {sense}")
-
-    mip_model.write(file_name)
-
-
 def extract_current_ip_instance(model) -> MIPInstance:
     m = model.as_pyscipopt()  # type: pyscipopt.scip.Model
 
@@ -108,11 +42,14 @@ def extract_current_ip_instance(model) -> MIPInstance:
         lhs = const.getLhs()
         rhs = const.getRhs()
 
+        lhs_infinity = m.isInfinity(abs(lhs))
+        rhs_infinity = m.isInfinity(abs(rhs))
+
         if lhs == rhs:
             ip.equal(c_var_ids, c_mul, lhs)
-        elif lhs < rhs:
+        elif not lhs_infinity:
             ip.greater_or_equal(c_var_ids, c_mul, lhs)
-        elif rhs > lhs:
+        elif not rhs_infinity:
             ip.less_or_equal(c_var_ids, c_mul, rhs)
         else:
             raise RuntimeError("Something is wrong with left or right side values!")
