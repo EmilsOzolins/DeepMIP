@@ -1,8 +1,7 @@
 import torch
 import torch.nn as nn
 from model.normalization import NodeNorm, PairNorm
-from utils.data_utils import sparse_func, InputDataHolder, make_sparse_unit
-
+from utils.data_utils import sparse_func, InputDataHolder
 
 def sample_triangular(shape):
     sample1 = torch.rand(shape).cuda()
@@ -21,7 +20,7 @@ class MIPNetwork(torch.nn.Module):
         self.global_step = 0
 
         self.constraint_update = nn.Sequential(
-            nn.Linear(self.feature_maps * 2, self.feature_maps),
+            nn.Linear(self.feature_maps * 3, self.feature_maps),
             PairNorm(subtract_mean=False),
             nn.ReLU(),
             nn.Linear(self.feature_maps, self.feature_maps * 2),
@@ -34,7 +33,7 @@ class MIPNetwork(torch.nn.Module):
         )
 
         self.variable_update = nn.Sequential(
-            nn.Linear(self.feature_maps * 4 + 1, self.feature_maps),
+            nn.Linear(self.feature_maps * 3 + 1, self.feature_maps),
             PairNorm(subtract_mean=False),
             nn.ReLU(),
             nn.Linear(self.feature_maps, self.feature_maps),
@@ -64,24 +63,19 @@ class MIPNetwork(torch.nn.Module):
         obj_multipliers = torch.unsqueeze(batch_holder.objective_multipliers, dim=-1)
         obj_multipliers /= torch.mean(torch.abs(obj_multipliers)) + 1e-6
 
-        abs_graph = sparse_func(batch_holder.vars_const_graph, torch.square)
-        # unit_graph_pos = sparse_func(batch_holder.vars_const_graph, lambda x: torch.greater(x, 0.).float())
-        # unit_graph_neg = sparse_func(batch_holder.vars_const_graph, lambda x: torch.less(x, 0.).float())
-        unit_graph_pos = sparse_func(batch_holder.vars_const_graph, torch.relu)
-        unit_graph_neg = sparse_func(batch_holder.vars_const_graph, lambda x: torch.relu(-x))
-
-        #unit_graph = make_sparse_unit(batch_holder.vars_const_graph)
+        abs_graph = sparse_func(batch_holder.vars_const_graph, torch.abs)
+        # unit_graph = make_sparse_unit(batch_holder.vars_const_graph)
         # const_scaler = torch.sqrt(torch.sparse.sum(abs_graph, dim=0).to_dense()) + 1e-6
         # denom = torch.sparse.sum(unit_graph, dim=0).to_dense()+1e-6
         # const_scaler = torch.unsqueeze(const_scaler/denom, dim=-1)
 
         # TODO: Experiment with mean
         const_scaler = torch.sparse.sum(abs_graph, dim=0).to_dense() + 1e-6
-        const_scaler = torch.unsqueeze(torch.sqrt(const_scaler), dim=-1)
+        const_scaler = torch.unsqueeze(const_scaler, dim=-1)
 
         # TODO: Experiment with mean
         vars_scaler = torch.sparse.sum(abs_graph, dim=-1).to_dense() + 1e-6
-        vars_scaler = torch.unsqueeze(torch.sqrt(vars_scaler), dim=-1)
+        vars_scaler = torch.unsqueeze(vars_scaler, dim=-1)
 
         int_mask = torch.unsqueeze(batch_holder.integer_mask, dim=-1)
 
@@ -93,22 +87,20 @@ class MIPNetwork(torch.nn.Module):
 
                 left_side_value = torch.sparse.mm(batch_holder.vars_const_graph.t(), query)
                 left_side_value = (left_side_value - const_values) / const_scaler
-                const_loss = left_side_value
-                #const_loss1 = torch.relu(left_side_value)
+                const_loss = torch.relu(left_side_value)
+                const_loss1 = torch.relu(-left_side_value)
 
                 # obj_loss = query * obj_multipliers
                 const_gradient = torch.autograd.grad([const_loss.sum()], [query], retain_graph=True)[0]
                 # const_gradient1 = torch.autograd.grad([const_loss1.sum()], [query], retain_graph=True)[0]
 
-            const_msg = torch.cat([constraints, const_loss], dim=-1)
+            const_msg = torch.cat([constraints, const_loss, const_loss1], dim=-1)
             const_tmp = self.constraint_update(const_msg)
             constraints = const_tmp[:, :self.feature_maps] + 0.5 * constraints
 
-            constr_features = const_tmp[:, self.feature_maps:]
-            const2var_msg_pos = torch.sparse.mm(unit_graph_pos, constr_features) / vars_scaler
-            const2var_msg_neg = torch.sparse.mm(unit_graph_neg, constr_features) / vars_scaler
+            const2var_msg = torch.sparse.mm(batch_holder.vars_const_graph, const_tmp[:, self.feature_maps:]) / vars_scaler
 
-            var_msg = torch.cat([variables, const2var_msg_pos, const2var_msg_neg, const_gradient, obj_multipliers], dim=-1)
+            var_msg = torch.cat([variables, const2var_msg, const_gradient, obj_multipliers], dim=-1)
             variables = self.variable_update(var_msg) + 0.5 * variables
 
             out_vars = self.output(variables)
@@ -130,7 +122,7 @@ class MIPNetwork(torch.nn.Module):
         # self.summary.add_histogram("query_grad", const_gradient, self.global_step)
         # #self.summary.add_histogram("obj_loss", obj_loss, self.global_step)
         # self.summary.add_histogram("obj_multipliers", obj_multipliers, self.global_step)
-        # self.summary.add_histogram("const2var_msg", const2var_msg_pos, self.global_step)
+        # self.summary.add_histogram("const2var_msg", const2var_msg, self.global_step)
         # self.summary.add_histogram("variables_data", variables, self.global_step)
         # self.summary.add_histogram("constraints_data", constraints, self.global_step)
         # self.summary.add_histogram("const_scaler", const_scaler, self.global_step)
