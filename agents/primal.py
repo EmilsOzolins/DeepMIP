@@ -2,13 +2,14 @@ import ecole
 import numpy as np
 import pyscipopt
 
+from agents.primal_nn import NetworkPolicy, extract_current_ip_instance
+
 
 class ObservationFunction():
 
     def __init__(self, problem):
         # called once for each problem benchmark
         self.problem = problem  # to devise problem-specific observations
-        self.isFresh = None
 
     def seed(self, seed):
         # called before each episode
@@ -54,8 +55,9 @@ class ObservationFunction_inner():
         obj_val = m.getObjVal()
         sol = m.getBestSol()
 
-        observation = (sol, obj_val)
-        return observation
+        ip = extract_current_ip_instance(model)
+
+        return sol, obj_val, ip
 
 
 class SearchDynamics(ecole.dynamics.PrimalSearchDynamics):
@@ -111,6 +113,8 @@ class Policy():
         self.problem = problem  # to devise problem-specific policies
         self.env = None
         self.m = None
+        self.network_policy = NetworkPolicy(problem)
+        self.obs = None
 
     def seed(self, seed):
         # called before each episode
@@ -131,7 +135,7 @@ class Policy():
             model_copy.setHeuristics(pyscipopt.scip.PY_SCIP_PARAMSETTING.AGGRESSIVE)
 
             env = SCIPEnvironment(observation_function=ObservationFunction_inner())
-            obs, self.action_set, _, self.done, info = env.reset(model_copy)
+            self.obs, self.action_set, _, self.done, info = env.reset(model_copy)
             self.m = env.model.as_pyscipopt()
             # we want to focus on finding feasible solutions
             self.m.setHeuristics(pyscipopt.scip.PY_SCIP_PARAMSETTING.AGGRESSIVE)
@@ -142,9 +146,10 @@ class Policy():
             self.reported_bound = self.env.model.primal_bound
 
         while self.env.model.primal_bound >= self.reported_bound and not self.done:
-            policy_action = ([], [])  # todo our policy
+            *_, ip = self.obs
+            policy_action = self.network_policy(self.action_set, ip)
             # print(len(self.action_set))
-            obs, self.action_set, _, self.done, info = self.env.step(policy_action)
+            self.obs, self.action_set, _, self.done, info = self.env.step(policy_action)
 
         # keep track of best sol improvements in the copied model to be able to set a limit
 
@@ -156,7 +161,7 @@ class Policy():
             print(f"done in {self.m.getSolvingTime()} sec.")
             return [], []
 
-        sol, obj_val = obs
+        sol, obj_val, ip = self.obs
         # print('nSols', self.m.getNSols())
         print(f"{self.m.getSolvingTime()} seconds spend searching, best solution so far {obj_val}")
         # sol_vals = np.asarray([sol[var] for var in vars_orig])

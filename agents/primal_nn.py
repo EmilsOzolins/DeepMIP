@@ -14,7 +14,7 @@ from model.mip_network import MIPNetwork
 from utils.data_utils import InputDataHolder
 
 
-def extract_current_ip_instance(model):
+def extract_current_ip_instance(model) -> MIPInstance:
     m = model.as_pyscipopt()  # type: pyscipopt.scip.Model
 
     variables = m.getVars(transformed=True)  # type: List[pyscipopt.scip.Variable]
