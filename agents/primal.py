@@ -14,7 +14,7 @@ class ObservationFunction():
     def seed(self, seed):
         # called before each episode
         # use this seed to make your code deterministic
-        pass
+        return 0  # TODO: This is set just for comparison
 
     def before_reset(self, model):
         # called when a new episode is about to start
@@ -41,7 +41,7 @@ class ObservationFunction_inner():
     def seed(self, seed):
         # called before each episode
         # use this seed to make your code deterministic
-        pass
+        return 0  # TODO: This is set just for comparison
 
     def before_reset(self, model):
         # called when a new episode is about to start
@@ -73,8 +73,8 @@ class SCIPEnvironment(ecole.environment.PrimalSearch):
         self.can_transition = True
         try:
             self.model = ecole.core.scip.Model.from_pyscipopt(instance)
-            self.model.as_pyscipopt().setHeuristics(
-                pyscipopt.scip.PY_SCIP_PARAMSETTING.AGGRESSIVE)  # we want to focus on finding feasible solutions
+            # we want to focus on finding feasible solutions
+            self.model.as_pyscipopt().setHeuristics(pyscipopt.scip.PY_SCIP_PARAMSETTING.AGGRESSIVE)
             self.model.set_params(self.scip_params)
             self.model.disable_presolve()
 
@@ -119,7 +119,8 @@ class Policy():
     def seed(self, seed):
         # called before each episode
         # use this seed to make your code deterministic
-        self.rng = np.random.RandomState(seed)
+        # self.rng = np.random.RandomState(seed)
+        return 0
 
     def __call__(self, action_vars_in, observation):
         model, m_isfresh, vars_orig = observation
