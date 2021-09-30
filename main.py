@@ -252,22 +252,22 @@ def sum_loss_sumscaled(asn_list, batch_holder, eps = 1e-3):
     sum_loss_c = 0.
     sum_loss_o = 0.
 
-    abs_graph = sparse_func(batch_holder.vars_const_graph, torch.abs)
-    scalers1 = torch.sparse.sum(abs_graph, dim=0).to_dense()
-    scalers1 = torch.unsqueeze(torch.clamp(scalers1, min=1.), dim=-1)
-    unit_graph = make_sparse_unit(batch_holder.vars_const_graph)
-    scalers2 = torch.unsqueeze(torch.sparse.sum(unit_graph, dim=0).to_dense(), dim=-1)
-    scalers1 = scalers2 / scalers1
+    abs_graph = sparse_func(batch_holder.vars_const_graph, torch.square)
+    scalers1 = torch.sqrt(torch.sparse.sum(abs_graph, dim=0).to_dense())
+    scalers1 = torch.unsqueeze(torch.clamp(scalers1, min=1e-3), dim=-1)
+    #unit_graph = make_sparse_unit(batch_holder.vars_const_graph)
+    #scalers2 = torch.unsqueeze(torch.sparse.sum(unit_graph, dim=0).to_dense(), dim=-1)
+    scalers1 = 1.0 / scalers1
 
     if batch_holder.vars_obj_graph._nnz() == 0:
         scalers1_o = 1.
     else:
-        abs_graph_o = sparse_func(batch_holder.vars_obj_graph, torch.abs)
-        unit_graph_o = make_sparse_unit(batch_holder.vars_obj_graph)
-        scalers1_o = torch.sparse.sum(abs_graph_o, dim=0).to_dense()
-        scalers1_o = torch.unsqueeze(torch.clamp(scalers1_o, min=1.), dim=-1)
-        scalers2_o = torch.unsqueeze(torch.sparse.sum(unit_graph_o, dim=0).to_dense(), dim=-1)
-        scalers1_o = scalers2_o / scalers1_o
+        abs_graph_o = sparse_func(batch_holder.vars_obj_graph, torch.square)
+        #unit_graph_o = make_sparse_unit(batch_holder.vars_obj_graph)
+        scalers1_o = torch.sqrt(torch.sparse.sum(abs_graph_o, dim=0).to_dense())
+        scalers1_o = torch.unsqueeze(torch.clamp(scalers1_o, min=1e-3), dim=-1)
+        #scalers2_o = torch.unsqueeze(torch.sparse.sum(unit_graph_o, dim=0).to_dense(), dim=-1)
+        scalers1_o = 1.0 / scalers1_o
 
     logit_maps = asn_list[0].size()[-1]
     costs = torch.square(torch.arange(1, logit_maps + 1, dtype=torch.float32, device=asn_list[0].device))
