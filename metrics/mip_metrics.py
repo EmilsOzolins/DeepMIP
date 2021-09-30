@@ -1,7 +1,7 @@
 import torch
 
 from metrics.general_metrics import AverageMetrics, StackableMetrics
-from utils.data_utils import MIPBatchHolder
+from utils.data_utils import MIPBatchHolder, make_sparse_unit, sparse_func
 
 
 class MIPMetrics(StackableMetrics):
@@ -112,9 +112,11 @@ class MIPMetrics(StackableMetrics):
         return sat_const
 
     @staticmethod
-    def _mask_sat_constraints(const_values, prediction, vars_const_graph):
+    def _mask_sat_constraints(const_values, prediction, vars_const_graph, eps = 1e-4):
         const_left_val = torch.sparse.mm(vars_const_graph.t(), torch.unsqueeze(prediction, dim=-1))
-        sat_const = torch.less_equal(const_left_val, torch.unsqueeze(const_values, dim=-1))
+        abs_graph = sparse_func(vars_const_graph, torch.abs)
+        scalers = torch.sparse.mm(abs_graph.t(), torch.unsqueeze(prediction, dim=-1)) #eps is proportional to the sum of all variable mulipliers in the constraint
+        sat_const = torch.less_equal(const_left_val, torch.unsqueeze(const_values, dim=-1)+eps*scalers)
         sat_const = sat_const.float()
         return sat_const
 
