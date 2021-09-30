@@ -112,8 +112,10 @@ class ItemPlacementDataset(MIPDataset, Dataset):
 
             if model.sense == 'MIN':
                 ip = ip.minimize_objective(var_indices, coefficients)
+                optimization_sign = 1
             elif model.sense == 'MAX':
                 ip = ip.maximize_objective(var_indices, coefficients)
+                optimization_sign = -1 # reverse the optimum value for maximization tasks
             else:
                 raise RuntimeError("Model sense not found! Please check your MIP file.")
 
@@ -132,7 +134,7 @@ class ItemPlacementDataset(MIPDataset, Dataset):
                 status = model.optimize(max_seconds=2)
 
                 if status in {OptimizationStatus.OPTIMAL, OptimizationStatus.FEASIBLE}:
-                    obj_value = model.objective_value
+                    obj_value = model.objective_value * optimization_sign
                 else:
                     warnings.warn(f"Solution not found in the time limit,"
                                   f" will use nan as objective. Return status was {status}")

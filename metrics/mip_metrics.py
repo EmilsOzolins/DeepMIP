@@ -66,41 +66,31 @@ class MIPMetrics(StackableMetrics):
     @staticmethod
     def _count_optimal_values(opt_values, prediction, vars_obj_graph):
         predicted_val = torch.sparse.mm(vars_obj_graph.t(), torch.unsqueeze(prediction, dim=-1))
-        predicted_val = torch.abs(predicted_val)
-
         found_optimum = torch.isclose(predicted_val, opt_values)
         return torch.squeeze(found_optimum)
 
     @staticmethod
     def _mean_optimality_gap(vars_obj_graph, opt_values, prediction):
         predicted_val = torch.sparse.mm(vars_obj_graph.t(), torch.unsqueeze(prediction, dim=-1))
-        predicted_val = torch.abs(predicted_val)
-        optimality_gap = torch.abs(opt_values - predicted_val)
-
+        optimality_gap = predicted_val - opt_values
         return torch.mean(optimality_gap)
 
     @staticmethod
     def _median_optimality_gap(vars_obj_graph, opt_values, prediction):
         predicted_val = torch.sparse.mm(vars_obj_graph.t(), torch.unsqueeze(prediction, dim=-1))
-        predicted_val = torch.abs(predicted_val)
-        optimality_gap = torch.abs(opt_values - predicted_val)
-
+        optimality_gap = predicted_val - opt_values
         return torch.median(optimality_gap)
 
     @staticmethod
     def _quantile_optimality_gap(q, vars_obj_graph, opt_values, prediction):
         predicted_val = torch.sparse.mm(vars_obj_graph.t(), torch.unsqueeze(prediction, dim=-1))
-        predicted_val = torch.abs(predicted_val)
-        optimality_gap = torch.abs(opt_values - predicted_val)
-
+        optimality_gap = predicted_val - opt_values
         return torch.quantile(optimality_gap, q)
 
     @staticmethod
     def _max_optimality_gap(vars_obj_graph, opt_values, prediction):
         predicted_val = torch.sparse.mm(vars_obj_graph.t(), torch.unsqueeze(prediction, dim=-1))
-        predicted_val = torch.abs(predicted_val)
-        optimality_gap = torch.abs(opt_values - predicted_val)
-
+        optimality_gap = predicted_val - opt_values
         return torch.max(optimality_gap)
 
     def _satisfied_constraints(self, prediction, vars_const_graph, const_values):

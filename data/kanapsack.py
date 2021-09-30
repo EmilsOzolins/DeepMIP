@@ -70,7 +70,7 @@ class BoundedKnapsackDataset(MIPDataset, IterableDataset):
         solution_vars = [v.solution_value() for v in variables]
         rounded_solutions = [round(s) for s in solution_vars]
 
-        return sum([s * v for s, v in zip(rounded_solutions, values)])
+        return -sum([s * v for s, v in zip(rounded_solutions, values)])
 
     @abstractmethod
     def get_optimal_value(self, weights, values, capacities):
@@ -122,7 +122,7 @@ class BinaryKnapsackDataset(BoundedKnapsackDataset):
             pywrapknapsack_solver.KnapsackSolver.KNAPSACK_BRUTE_FORCE_SOLVER, 'KnapsackExample')
 
         solver.Init(values, [weights], capacities)
-        return solver.Solve()
+        return -solver.Solve()
 
     def convert_to_mip(self, var_indices, weights, values, copies, capacity):
         ip = MIPInstance(len(var_indices))
