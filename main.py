@@ -2,6 +2,7 @@ import itertools
 import os
 import time
 from datetime import datetime as dt
+from pathlib import Path
 
 import numpy as np
 import torch.sparse
@@ -59,10 +60,16 @@ def main():
     # train_dataset = LoadBalancingDataset("/host-dir/mip_data/load_balancing/train")
     # val_dataset = LoadBalancingDataset("/host-dir/mip_data/load_balancing/valid")
 
-    train_dataset = ItemPlacementDataset("/host-dir/mip_data/item_placement/train_augment")
+    train_dataset = ItemPlacementDataset("/host-dir/mip_data/item_placement/train_augment_full")
+    # train_dataset = ItemPlacementDataset("/host-dir/mip_data/item_placement/train_augment")
     # train_dataset = ItemPlacementDataset("/host-dir/mip_data/item_placement/train_augment_10_100")
     # train_dataset = train_dataset + ItemPlacementDataset("/host-dir/mip_data/item_placement/train")
-    val_dataset = ItemPlacementDataset("/host-dir/mip_data/item_placement/valid", find_solutions=True)
+    # val_dataset = ItemPlacementDataset("/host-dir/mip_data/item_placement/valid")
+    val_dataset = ItemPlacementDataset("/host-dir/mip_data/item_placement/valid_augment_full", find_solutions=True)
+
+    if not Path(config.cache_dir).exists():
+        train_dataset.prefill_cache()  # Warms the cache for training once iterating over dataset
+        val_dataset.prefill_cache()
 
     train_dataloader = create_data_loader(train_dataset)
     validation_dataloader = create_data_loader(val_dataset)
@@ -73,7 +80,7 @@ def main():
         pass_steps=params.recurrent_steps,
         summary=summary
     ).cuda()
-    optimizer = Adam_clip(network.parameters(), lr=params.learning_rate, clip_epsilon=1e-6, clip_multiplier = 2.)
+    optimizer = Adam_clip(network.parameters(), lr=params.learning_rate, clip_epsilon=1e-6, clip_multiplier=2.)
 
     current_step = 0
     train_steps = 1000
@@ -247,7 +254,7 @@ def combined_loss(asn, batch_holder):
 #     return torch.mean(per_graph_loss_avg), torch.mean(loss_c), torch.mean(loss_o), best_logit_map
 
 
-def sum_loss_sumscaled(asn_list, batch_holder, eps = 1e-3):
+def sum_loss_sumscaled(asn_list, batch_holder, eps=1e-3):
     sum_loss = 0.
     sum_loss_c = 0.
     sum_loss_o = 0.
@@ -255,18 +262,18 @@ def sum_loss_sumscaled(asn_list, batch_holder, eps = 1e-3):
     abs_graph = sparse_func(batch_holder.vars_const_graph, torch.square)
     scalers1 = torch.sqrt(torch.sparse.sum(abs_graph, dim=0).to_dense())
     scalers1 = torch.unsqueeze(torch.clamp(scalers1, min=1e-3), dim=-1)
-    #unit_graph = make_sparse_unit(batch_holder.vars_const_graph)
-    #scalers2 = torch.unsqueeze(torch.sparse.sum(unit_graph, dim=0).to_dense(), dim=-1)
+    # unit_graph = make_sparse_unit(batch_holder.vars_const_graph)
+    # scalers2 = torch.unsqueeze(torch.sparse.sum(unit_graph, dim=0).to_dense(), dim=-1)
     scalers1 = 1.0 / scalers1
 
     if batch_holder.vars_obj_graph._nnz() == 0:
         scalers1_o = 1.
     else:
         abs_graph_o = sparse_func(batch_holder.vars_obj_graph, torch.square)
-        #unit_graph_o = make_sparse_unit(batch_holder.vars_obj_graph)
+        # unit_graph_o = make_sparse_unit(batch_holder.vars_obj_graph)
         scalers1_o = torch.sqrt(torch.sparse.sum(abs_graph_o, dim=0).to_dense())
         scalers1_o = torch.unsqueeze(torch.clamp(scalers1_o, min=1e-3), dim=-1)
-        #scalers2_o = torch.unsqueeze(torch.sparse.sum(unit_graph_o, dim=0).to_dense(), dim=-1)
+        # scalers2_o = torch.unsqueeze(torch.sparse.sum(unit_graph_o, dim=0).to_dense(), dim=-1)
         scalers1_o = 1.0 / scalers1_o
 
     logit_maps = asn_list[0].size()[-1]
@@ -334,7 +341,7 @@ def create_data_loader(dataset):
                           shuffle=not isinstance(dataset, IterableDataset),
                           collate_fn=batch_data,
                           num_workers=os.cpu_count(),
-                          prefetch_factor=4,
+                          prefetch_factor=params.batch_size,
                           persistent_workers=True,
                           drop_last=True
                           )
