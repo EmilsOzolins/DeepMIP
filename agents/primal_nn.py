@@ -31,10 +31,10 @@ def extract_current_ip_instance(model) -> MIPInstance:
         c_mul = const.getVals()
         columns = const.getCols()  # type: List[pyscipopt.scip.Column]
 
-        all_vars_set = all([c.getLb() == c.getUb() for c in columns])
-
-        if all_vars_set:
-            continue
+        # all_vars_set = all([c.getLb() == c.getUb() for c in columns])
+        #
+        # if all_vars_set:
+        #     continue
 
         c_vars = [c.getVar() for c in columns]
         c_var_ids = [var2id[v.name] for v in c_vars]
@@ -192,8 +192,7 @@ class NetworkPolicy():
     def seed(self, seed):
         # called before each episode
         # use this seed to make your code deterministic
-        # self.rng = np.random.RandomState(seed) # TODO: Enable random
-        return 0
+        self.rng = np.random.RandomState(seed)
 
     def __call__(self, action_set, ip: MIPInstance):
         obs_holder = Instance2Holder(ip, self.device)
