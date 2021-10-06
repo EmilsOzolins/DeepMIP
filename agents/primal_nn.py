@@ -1,49 +1,44 @@
 from functools import cached_property, lru_cache
 from typing import Any, List
 
-import mip
 import numpy as np
 import pyscipopt
 import torch
-from mip import Model, xsum
 
 import config as config
 import hyperparams as params
 from data.item_placement import ItemPlacementDataset
 from data.load_balancing import LoadBalancingDataset
 from data.mip_instance import MIPInstance
+from main import sum_loss
 from model.mip_network import MIPNetwork
 from utils.data_utils import InputDataHolder
 
-def extract_current_ip_instance(model) -> MIPInstance:
-    m = model.as_pyscipopt()  # type: pyscipopt.scip.Model
 
-    variables = m.getVars(transformed=True)  # type: List[pyscipopt.scip.Variable]
+def extract_current_ip_instance(model: pyscipopt.scip.Model) -> MIPInstance:
+    variables = model.getVars(transformed=True)  # type: List[pyscipopt.scip.Variable]
     var2id = {var.name: idx for idx, var in enumerate(variables)}
+    var2var = {var.name: var for var in variables}
 
-    constraints = m.getLPRowsData()  # type: List[pyscipopt.scip.Row]
-    constraints = [c for c in constraints if not c.isRemovable()]
-    # TODO: Filter ones where all variables are set by bounds
+    constraints = model.getConss()  # type: List[pyscipopt.scip.Row]
+    constraints = [model.getTransformedCons(c) for c in constraints if not c.isRemovable()]
 
     ip = MIPInstance()
 
     for const in constraints:
-        c_mul = const.getVals()
-        columns = const.getCols()  # type: List[pyscipopt.scip.Column]
+        lin_vals = list(model.getValsLinear(const).items())
+        c_mul = [m for _, m in lin_vals]
+        c_var_ids = [var2id[v] for v, _ in lin_vals]
 
-        # all_vars_set = all([c.getLb() == c.getUb() for c in columns])
-        #
-        # if all_vars_set:
-        #     continue
+        if all([var2var[v].getLbLocal() == var2var[v].getUbLocal() for v, _ in
+                lin_vals]):  # Remove constraints that are already satisfied
+            continue
 
-        c_vars = [c.getVar() for c in columns]
-        c_var_ids = [var2id[v.name] for v in c_vars]
+        lhs = model.getLhs(const)
+        rhs = model.getRhs(const)
 
-        lhs = const.getLhs()
-        rhs = const.getRhs()
-
-        lhs_infinity = m.isInfinity(abs(lhs))
-        rhs_infinity = m.isInfinity(abs(rhs))
+        lhs_infinity = model.isInfinity(abs(lhs))
+        rhs_infinity = model.isInfinity(abs(rhs))
 
         if lhs == rhs:
             ip.equal(c_var_ids, c_mul, lhs)
@@ -54,9 +49,9 @@ def extract_current_ip_instance(model) -> MIPInstance:
         else:
             raise RuntimeError("Something is wrong with left or right side values!")
 
-    sense = m.getObjectiveSense()
-    objective = m.getObjective()  # type: pyscipopt.scip.Expr
-    obj_exp = [(m.getTransformedVar(term.vartuple[0]), mul) for term, mul in objective.terms.items()]
+    sense = model.getObjectiveSense()
+    objective = model.getObjective()  # type: pyscipopt.scip.Expr
+    obj_exp = [(model.getTransformedVar(term.vartuple[0]), mul) for term, mul in objective.terms.items()]
     obj_exp = [(var2id[var.name], mul) for var, mul in obj_exp]
 
     objective_indices = [x for x, _ in obj_exp]
@@ -74,7 +69,7 @@ def extract_current_ip_instance(model) -> MIPInstance:
 
     for var in variables:
         ip.variable_lower_bound(var2id[var.name], var.getLbLocal())
-        ip.variable_lower_bound(var2id[var.name], var.getLbLocal())
+        ip.variable_upper_bound(var2id[var.name], var.getUbLocal())
 
     return ip
 
@@ -179,7 +174,7 @@ class NetworkPolicy():
             pass_steps=params.recurrent_steps,
             summary=None
         )
-        run_name = "20210927-155836"
+        run_name = "20211006-093510"
         checkpoint = torch.load(f"/host-dir/mip_models/{run_name}/model.pth")
 
         self.network.load_state_dict(checkpoint["model_state_dict"])
@@ -199,6 +194,8 @@ class NetworkPolicy():
 
         with torch.no_grad():
             outputs, logits = self.network.forward(obs_holder, self.device)
-        output = self.dataset.decode_model_outputs(outputs[-1], obs_holder)
+
+        l, loss_c, loss_o, best_logit_map = sum_loss(outputs[-1:], obs_holder)
+        output = self.dataset.decode_model_outputs(outputs[-1][:, best_logit_map:best_logit_map + 1], obs_holder)
 
         return action_set, output.cpu().numpy()[np.int64(action_set)]

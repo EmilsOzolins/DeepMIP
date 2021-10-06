@@ -55,7 +55,7 @@ class ObservationFunction_inner():
         obj_val = m.getObjVal()
         sol = m.getBestSol()
 
-        ip = extract_current_ip_instance(model)
+        ip = extract_current_ip_instance(m)
 
         return sol, obj_val, ip
 
