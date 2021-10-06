@@ -152,11 +152,11 @@ def get_mip_instance(file_name: str, find_solutions=False):
                 obj_value = model.objective_value * optimization_sign
             else:
                 warnings.warn(f"Solution not found in the time limit,"
-                              f" will use nan as objective. Return status was {status}")
-                obj_value = 'nan'
-            ip.presolved_objective_value(float(obj_value))
+                              f" will use 0 as objective. Return status was {status}")
+                obj_value = 0
+            ip = ip.presolved_objective_value(float(obj_value))
         else:
-            ip = ip.presolved_objective_value(float('nan'))
+            ip = ip.presolved_objective_value(0)
     except Exception as ex:
         raise Exception(f"Please delete {file_name}") from ex
 

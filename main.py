@@ -67,7 +67,7 @@ def main():
     # val_dataset = ItemPlacementDataset("/host-dir/mip_data/item_placement/valid")
     val_dataset = ItemPlacementDataset("/host-dir/mip_data/item_placement/valid_augment_full", find_solutions=True)
 
-    if not Path(config.cache_dir).exists():
+    if config.prefill_cache:
         train_dataset.prefill_cache()  # Warms the cache for training once iterating over dataset
         val_dataset.prefill_cache()
 
