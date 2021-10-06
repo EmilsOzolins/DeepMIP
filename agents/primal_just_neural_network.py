@@ -24,7 +24,7 @@ class ObservationFunction:  # This allows customizing information received by th
         if done:
             return None
 
-        return extract_current_ip_instance(model)
+        return extract_current_ip_instance(model.as_pyscipopt())
 
 
 class Policy():

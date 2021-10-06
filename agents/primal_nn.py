@@ -18,24 +18,24 @@ from utils.data_utils import InputDataHolder
 def extract_current_ip_instance(model: pyscipopt.scip.Model) -> MIPInstance:
     variables = model.getVars(transformed=True)  # type: List[pyscipopt.scip.Variable]
     var2id = {var.name: idx for idx, var in enumerate(variables)}
-    var2var = {var.name: var for var in variables}
 
-    constraints = model.getConss()  # type: List[pyscipopt.scip.Row]
-    constraints = [model.getTransformedCons(c) for c in constraints if not c.isRemovable()]
+    constraints = model.getLPRowsData()  # type: List[pyscipopt.scip.Row]
+    constraints = [c for c in constraints if not c.isRemovable()]
 
     ip = MIPInstance()
 
     for const in constraints:
-        lin_vals = list(model.getValsLinear(const).items())
-        c_mul = [m for _, m in lin_vals]
-        c_var_ids = [var2id[v] for v, _ in lin_vals]
+        c_mul = const.getVals()
+        columns = const.getCols()  # type: List[pyscipopt.scip.Column]
+        c_vars = [model.getTransformedVar(c.getVar()) for c in columns]
 
-        if all([var2var[v].getLbLocal() == var2var[v].getUbLocal() for v, _ in
-                lin_vals]):  # Remove constraints that are already satisfied
+        if all([v.getLbLocal() == v.getUbLocal() for v in c_vars]):  # Remove constraints that are already satisfied
             continue
 
-        lhs = model.getLhs(const)
-        rhs = model.getRhs(const)
+        c_var_ids = [var2id[v.name] for v in c_vars]
+
+        lhs = const.getLhs()
+        rhs = const.getRhs()
 
         lhs_infinity = model.isInfinity(abs(lhs))
         rhs_infinity = model.isInfinity(abs(rhs))
@@ -197,5 +197,21 @@ class NetworkPolicy():
 
         l, loss_c, loss_o, best_logit_map = sum_loss(outputs[-1:], obs_holder)
         output = self.dataset.decode_model_outputs(outputs[-1][:, best_logit_map:best_logit_map + 1], obs_holder)
+
+        # TODO: Understand what to return
+        left_const = torch.sparse.mm(obs_holder.vars_const_graph.t(), torch.unsqueeze(output, dim=-1))
+        sat_const = torch.relu(torch.squeeze(left_const) - obs_holder.const_values)
+
+        non_zero = sat_const != 0
+        is_zero = sat_const == 0
+
+        sat_const[non_zero] = 1
+        sat_const[is_zero] = 0
+
+        vars_in_sat_const = torch.sparse.mm(obs_holder.binary_vars_const_graph, torch.unsqueeze(sat_const, dim=-1))
+        vars_in_sat_const = torch.squeeze(vars_in_sat_const).cpu().numpy()
+        vars_in_sat_const = {i for i, x in enumerate(vars_in_sat_const) if x == 0}
+
+        action_set = [x for x in action_set if x in vars_in_sat_const]
 
         return action_set, output.cpu().numpy()[np.int64(action_set)]

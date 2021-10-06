@@ -14,7 +14,8 @@ class ObservationFunction():
     def seed(self, seed):
         # called before each episode
         # use this seed to make your code deterministic
-        return 0  # TODO: This is set just for comparison
+        # return 0  # TODO: This is set just for comparison
+        pass
 
     def before_reset(self, model):
         # called when a new episode is about to start
@@ -41,7 +42,8 @@ class ObservationFunction_inner():
     def seed(self, seed):
         # called before each episode
         # use this seed to make your code deterministic
-        return 0  # TODO: This is set just for comparison
+        # return 0  # TODO: This is set just for comparison
+        pass
 
     def before_reset(self, model):
         # called when a new episode is about to start
@@ -62,7 +64,7 @@ class ObservationFunction_inner():
 
 class SearchDynamics(ecole.dynamics.PrimalSearchDynamics):
 
-    def __init__(self, trials_per_node=1, depth_freq=1, depth_start=0, depth_stop=-1):
+    def __init__(self, trials_per_node=1, depth_freq=1, depth_start=0, depth_stop=100):
         super().__init__(trials_per_node, depth_freq, depth_start, depth_stop)
 
 
@@ -119,8 +121,8 @@ class Policy():
     def seed(self, seed):
         # called before each episode
         # use this seed to make your code deterministic
-        # self.rng = np.random.RandomState(seed)
-        return 0
+        self.rng = np.random.RandomState(seed)
+        # return 0
 
     def __call__(self, action_vars_in, observation):
         model, m_isfresh, vars_orig = observation
