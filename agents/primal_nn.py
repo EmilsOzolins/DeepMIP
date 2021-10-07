@@ -51,12 +51,12 @@ def extract_current_ip_instance(model: pyscipopt.scip.Model) -> MIPInstance:
             raise RuntimeError("Something is wrong with left or right side values!")
 
     sense = model.getObjectiveSense()
-    objective = model.getObjective()  # type: pyscipopt.scip.Expr
-    obj_exp = [(model.getTransformedVar(term.vartuple[0]), mul) for term, mul in objective.terms.items()]
-    obj_exp = [(var2id[var.name], mul) for var, mul in obj_exp]
+    # objective = model.getObjective()  # type: # pyscipopt.scip.Expr
+    # obj_exp = [(model.getTransformedVar(term.vartuple[0]), mul) for term, mul in objective.terms.items()]
+    # obj_exp = [(var2id[var.name], mul) for var, mul in obj_exp]
 
-    objective_indices = [x for x, _ in obj_exp]
-    objective_mul = [float(m) for _, m in obj_exp]
+    objective_indices = [var2id[v.name] for v in variables]
+    objective_mul = [float(v.getObj()) for v in variables]
 
     if sense == "minimize":
         ip.minimize_objective(objective_indices, objective_mul)
@@ -175,7 +175,7 @@ class NetworkPolicy():
             pass_steps=params.recurrent_steps,
             summary=None
         )
-        run_name = "20211006-093510"
+        run_name = "20211007-091039"
         checkpoint = torch.load(f"/host-dir/mip_models/{run_name}/model.pth")
 
         self.network.load_state_dict(checkpoint["model_state_dict"])
