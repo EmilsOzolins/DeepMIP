@@ -1,5 +1,6 @@
 import glob
 import multiprocessing as mp
+import random
 import warnings
 from typing import List, Dict
 
@@ -21,10 +22,12 @@ class LPDataset(MIPDataset, Dataset):
     WARNING: Files are cached on disk! If any changes are made cache should be deleted manually.
     """
 
-    def __init__(self, data_folder, find_solutions=False, augment: bool = False) -> None:
+    def __init__(self, data_folder, find_solutions=False,
+                 augment: bool = False, augment_with_objective: bool = False) -> None:
         self._instances = glob.glob(data_folder + "/*.lp")
         self._should_augment = augment
         self._find_solutions = find_solutions
+        self._augment_objective = augment_with_objective
 
     def prefill_cache(self):
         # Prefills cache in a sequential manner
@@ -66,7 +69,7 @@ class LPDataset(MIPDataset, Dataset):
 
     def __getitem__(self, index: int) -> Dict:
         file_name = self._instances[index]
-        return get_item(file_name, self._should_augment, self._find_solutions)
+        return get_item(file_name, self._should_augment, self._find_solutions, self._augment_objective)
 
     def __len__(self) -> int:
         return len(self._instances)
@@ -77,13 +80,13 @@ class LPDataset(MIPDataset, Dataset):
 
 
 @config.cache.memoize()
-def get_item(file_name, should_augment, find_solutions):
-    ip = get_mip_instance(file_name, find_solutions=find_solutions)
+def get_item(file_name, should_augment, find_solutions, augment_objective):
+    ip = get_mip_instance(file_name, find_solutions=find_solutions, augment_objective=augment_objective)
     return {"mip": ip.augment() if should_augment else ip,
             "optimal_solution": ip.objective_value}
 
 
-def get_mip_instance(file_name: str, find_solutions=False):
+def get_mip_instance(file_name: str, find_solutions=False, augment_objective=False):
     try:
         model = Model()
         model.read(file_name)
@@ -126,9 +129,13 @@ def get_mip_instance(file_name: str, find_solutions=False):
         coefficients = [float(c) for c in objective.expr.values()]
 
         if model.sense == 'MIN':
+            if augment_objective:
+                ip = ip.less_or_equal(var_indices, coefficients, random.random() * 800)
             ip = ip.minimize_objective(var_indices, coefficients)
             optimization_sign = 1
         elif model.sense == 'MAX':
+            if augment_objective:
+                ip = ip.greater_or_equal(var_indices, coefficients, random.random() * 800)
             ip = ip.maximize_objective(var_indices, coefficients)
             optimization_sign = -1  # reverse the optimum value for maximization tasks
         else:
