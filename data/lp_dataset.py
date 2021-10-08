@@ -69,7 +69,15 @@ class LPDataset(MIPDataset, Dataset):
 
     def __getitem__(self, index: int) -> Dict:
         file_name = self._instances[index]
-        return get_item(file_name, self._should_augment, self._find_solutions, self._augment_objective)
+        item = get_item(file_name, self._should_augment, self._find_solutions, self._augment_objective)
+
+        if self._augment_objective:
+            # TODO: Handle optimization sense
+            item["mip"] = item["mip"].less_or_equal(item["mip"]._objective_indices,
+                                                    item["mip"]._objective_multipliers,
+                                                    random.random() * 800)
+
+        return item
 
     def __len__(self) -> int:
         return len(self._instances)
@@ -129,13 +137,9 @@ def get_mip_instance(file_name: str, find_solutions=False, augment_objective=Fal
         coefficients = [float(c) for c in objective.expr.values()]
 
         if model.sense == 'MIN':
-            if augment_objective:
-                ip = ip.less_or_equal(var_indices, coefficients, random.random() * 800)
             ip = ip.minimize_objective(var_indices, coefficients)
             optimization_sign = 1
         elif model.sense == 'MAX':
-            if augment_objective:
-                ip = ip.greater_or_equal(var_indices, coefficients, random.random() * 800)
             ip = ip.maximize_objective(var_indices, coefficients)
             optimization_sign = -1  # reverse the optimum value for maximization tasks
         else:
