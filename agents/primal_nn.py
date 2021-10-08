@@ -7,13 +7,14 @@ import torch
 
 import config as config
 import hyperparams as params
-from data.item_placement import ItemPlacementDataset
-from data.load_balancing import LoadBalancingDataset
+from data.lp_dataset import LPDataset
 from data.mip_instance import MIPInstance
 from main import sum_loss
 from model.mip_network import MIPNetwork
 from utils.data_utils import InputDataHolder
 
+def extract_current_ip_instance(model) -> MIPInstance:
+    m = model.as_pyscipopt()  # type: pyscipopt.scip.Model
 
 def extract_current_ip_instance(model: pyscipopt.scip.Model) -> MIPInstance:
     variables = model.getVars(transformed=True)  # type: List[pyscipopt.scip.Variable]
@@ -181,8 +182,7 @@ class NetworkPolicy():
         self.network.eval()
         self.network.to(self.device)
 
-        self.dataset = ItemPlacementDataset(
-            "/host-dir/") if self.problem == "item_placement" else LoadBalancingDataset("/host-dir/")
+        self.dataset = LPDataset("/host-dir/")
 
     def seed(self, seed):
         # called before each episode

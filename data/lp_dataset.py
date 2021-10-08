@@ -16,7 +16,7 @@ from metrics.mip_metrics import MIPMetrics, MIPMetrics_train
 from utils.data_utils import InputDataHolder
 
 
-class ItemPlacementDataset(MIPDataset, Dataset):
+class LPDataset(MIPDataset, Dataset):
     """
     WARNING: Files are cached on disk! If any changes are made cache should be deleted manually.
     """
@@ -71,7 +71,7 @@ class ItemPlacementDataset(MIPDataset, Dataset):
     def __len__(self) -> int:
         return len(self._instances)
 
-    def __add__(self, other: 'ItemPlacementDataset') -> 'ItemPlacementDataset':
+    def __add__(self, other: 'LPDataset') -> 'LPDataset':
         self._instances += other._instances
         return self
 

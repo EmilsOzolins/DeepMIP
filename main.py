@@ -2,22 +2,20 @@ import itertools
 import os
 import time
 from datetime import datetime as dt
-from pathlib import Path
 
 import numpy as np
 import torch.sparse
 from torch.utils.data import DataLoader, IterableDataset
 from torch.utils.tensorboard import SummaryWriter
-from optimizers.adam_clip import Adam_clip
+
 import config
 import hyperparams as params
-from data.item_placement import ItemPlacementDataset
-from data.kanapsack import BinaryKnapsackDataset, ConstrainedBinaryKnapsackDataset
-from data.load_balancing import LoadBalancingDataset
+from data.lp_dataset import LPDataset
 from metrics.discrete_metrics import DiscretizationMetrics
 from metrics.general_metrics import AverageMetrics, MetricsHandler
 from model.mip_network import MIPNetwork
-from utils.data_utils import batch_data, MIPBatchHolder, sparse_func, make_sparse_unit
+from optimizers.adam_clip import Adam_clip
+from utils.data_utils import batch_data, MIPBatchHolder, sparse_func
 from utils.visualize import format_metrics
 
 now = dt.now()
@@ -57,15 +55,15 @@ def main():
     # train_dataset = ConstrainedBinaryKnapsackDataset(2, 20)
     # val_dataset = ConstrainedBinaryKnapsackDataset(2, 20)
 
-    # train_dataset = LoadBalancingDataset("/host-dir/mip_data/load_balancing/train")
-    # val_dataset = LoadBalancingDataset("/host-dir/mip_data/load_balancing/valid")
+    # train_dataset = LPDataset("/host-dir/mip_data/load_balancing/train_augment_full")
+    # val_dataset = LPDataset("/host-dir/mip_data/load_balancing/valid_augment_full", find_solutions=True)
 
-    train_dataset = ItemPlacementDataset("/host-dir/mip_data/item_placement/train_augment_full")
-    # train_dataset = ItemPlacementDataset("/host-dir/mip_data/item_placement/train_augment")
-    # train_dataset = ItemPlacementDataset("/host-dir/mip_data/item_placement/train_augment_10_100")
-    # train_dataset = train_dataset + ItemPlacementDataset("/host-dir/mip_data/item_placement/train")
-    # val_dataset = ItemPlacementDataset("/host-dir/mip_data/item_placement/valid")
-    val_dataset = ItemPlacementDataset("/host-dir/mip_data/item_placement/valid_augment_full", find_solutions=True)
+    train_dataset = LPDataset("/host-dir/mip_data/item_placement/train_augment_full")
+    # train_dataset = LPDataset("/host-dir/mip_data/item_placement/train_augment")
+    # train_dataset = LPDataset("/host-dir/mip_data/item_placement/train_augment_10_100")
+    # train_dataset = train_dataset + LPDataset("/host-dir/mip_data/item_placement/train")
+    # val_dataset = LPDataset("/host-dir/mip_data/item_placement/valid")
+    val_dataset = LPDataset("/host-dir/mip_data/item_placement/valid_augment_full", find_solutions=True)
 
     if config.prefill_cache:
         train_dataset.prefill_cache()  # Warms the cache for training once iterating over dataset
