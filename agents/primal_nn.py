@@ -13,8 +13,6 @@ from main import sum_loss
 from model.mip_network import MIPNetwork
 from utils.data_utils import InputDataHolder
 
-def extract_current_ip_instance(model) -> MIPInstance:
-    m = model.as_pyscipopt()  # type: pyscipopt.scip.Model
 
 def extract_current_ip_instance(model: pyscipopt.scip.Model) -> MIPInstance:
     variables = model.getVars(transformed=True)  # type: List[pyscipopt.scip.Variable]
@@ -59,8 +57,10 @@ def extract_current_ip_instance(model: pyscipopt.scip.Model) -> MIPInstance:
     objective_mul = [float(v.getObj()) for v in variables]
 
     if sense == "minimize":
+        ip.less_or_equal(objective_indices, objective_mul, model.getObjlimit() - model.getObjlimit() * 0.1)
         ip.minimize_objective(objective_indices, objective_mul)
     elif sense == "maximize":
+        ip.greater_or_equal(objective_indices, objective_mul, model.getObjlimit() - model.getObjlimit() * 0.1)
         ip.maximize_objective(objective_indices, objective_mul)
     else:
         raise RuntimeError(f"Unknown sense direction! Expected 'maximize/minimize' but found {sense}")
@@ -175,7 +175,7 @@ class NetworkPolicy():
             pass_steps=params.recurrent_steps,
             summary=None
         )
-        run_name = "20211007-091039"
+        run_name = "20211008-161748"
         checkpoint = torch.load(f"/host-dir/mip_models/{run_name}/model.pth")
 
         self.network.load_state_dict(checkpoint["model_state_dict"])
@@ -195,10 +195,26 @@ class NetworkPolicy():
         with torch.no_grad():
             outputs, logits = self.network.forward(obs_holder, self.device)
 
-        l, loss_c, loss_o, best_logit_map = sum_loss(outputs[-1:], obs_holder)
-        output = self.dataset.decode_model_outputs(outputs[-1][:, best_logit_map:best_logit_map + 1], obs_holder)
+        mask = torch.unsqueeze(obs_holder.integer_mask, dim=-1)
+        inv_mask = 1 - mask
+        rounded_outputs = torch.round(outputs[-1] * mask) + outputs[-1] * inv_mask
 
-        # TODO: Understand what to return
+        left_side = torch.sparse.mm(obs_holder.vars_const_graph.t(), rounded_outputs)
+        const_loss = torch.relu(left_side - torch.unsqueeze(obs_holder.const_values, dim=-1))
+        const_loss = torch.sum(const_loss, dim=0).cpu().numpy()
+
+        obj_loss = torch.sparse.mm(obs_holder.vars_obj_graph.t(), rounded_outputs)
+        obj_loss = torch.sum(obj_loss, dim=0).cpu().numpy()
+
+        best_map = sorted(zip(const_loss, obj_loss, range(len(obj_loss))), key=lambda x: (x[0], x[1]))
+        best_map = best_map[0][2]
+
+        # l, loss_c, loss_o, best_logit_map = sum_loss(outputs[-1:], obs_holder)
+        # output = self.dataset.decode_model_outputs(outputs[-1][:, best_logit_map:best_logit_map + 1], obs_holder)
+
+        output = rounded_outputs[:, best_map]
+        #
+        # # TODO: Understand what to return
         left_const = torch.sparse.mm(obs_holder.vars_const_graph.t(), torch.unsqueeze(output, dim=-1))
         sat_const = torch.relu(torch.squeeze(left_const) - obs_holder.const_values)
 
