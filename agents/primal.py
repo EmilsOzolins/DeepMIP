@@ -50,9 +50,6 @@ class ObservationFunction_inner():
         pass
 
     def extract(self, model, done):
-        if done:
-            return None
-
         m = model.as_pyscipopt()
         obj_val = m.getObjVal()
         sol = m.getBestSol()
@@ -64,7 +61,7 @@ class ObservationFunction_inner():
 
 class SearchDynamics(ecole.dynamics.PrimalSearchDynamics):
 
-    def __init__(self, trials_per_node=1, depth_freq=1, depth_start=0, depth_stop=100):
+    def __init__(self, trials_per_node=1, depth_freq=1, depth_start=0, depth_stop=-1):
         super().__init__(trials_per_node, depth_freq, depth_start, depth_stop)
 
 
@@ -116,7 +113,8 @@ class Policy():
         self.env = None
         self.m = None
         self.network_policy = NetworkPolicy(problem)
-        self.obs = None
+        self.counter = 0
+        self.step = 1
 
     def seed(self, seed):
         # called before each episode
@@ -129,6 +127,9 @@ class Policy():
 
         # reset solution improvement and solving time counters for freshly created models
         if m_isfresh:
+            self.obs = None
+            self.counter = 0
+            self.step = 1
             m_orig = model.as_pyscipopt()
             remaining_time_budget = m_orig.getParam("limits/time") - m_orig.getSolvingTime()
             # print("remaining_time_budget", remaining_time_budget)
@@ -136,21 +137,25 @@ class Policy():
             model_copy.setPresolve(pyscipopt.scip.PY_SCIP_PARAMSETTING.OFF)  # presolve has already been done
             # we want to focus on finding feasible solutions
             model_copy.setHeuristics(pyscipopt.scip.PY_SCIP_PARAMSETTING.AGGRESSIVE)
+            model_copy.setObjlimit(m_orig.getObjlimit())
 
-            env = SCIPEnvironment(observation_function=ObservationFunction_inner())
-            self.obs, self.action_set, _, self.done, info = env.reset(model_copy)
-            self.m = env.model.as_pyscipopt()
+            self.env = SCIPEnvironment(observation_function=ObservationFunction_inner())
+            self.obs, self.action_set, _, self.done, info = self.env.reset(model_copy)
+            self.m = self.env.model.as_pyscipopt()
             # we want to focus on finding feasible solutions
             self.m.setHeuristics(pyscipopt.scip.PY_SCIP_PARAMSETTING.AGGRESSIVE)
 
             # stop the agent before the environment times out
             self.m.setParam('limits/time', max(remaining_time_budget - 0.01, 0))
-            self.env = env
             self.reported_bound = self.env.model.primal_bound
 
         while self.env.model.primal_bound >= self.reported_bound and not self.done:
-            *_, ip = self.obs
-            policy_action = self.network_policy(self.action_set, ip)
+            if self.counter % self.step == 0:
+                *_, ip = self.obs
+                policy_action = self.network_policy(self.action_set, ip)
+            else:
+                policy_action = [], []
+            self.counter += 1
             # print(len(self.action_set))
             self.obs, self.action_set, _, self.done, info = self.env.step(policy_action)
 
@@ -164,10 +169,12 @@ class Policy():
             print(f"done in {self.m.getSolvingTime()} sec.")
             return [], []
 
-        sol, obj_val, ip = self.obs
-        # print('nSols', self.m.getNSols())
-        print(f"{self.m.getSolvingTime()} seconds spend searching, best solution so far {obj_val}")
-        # sol_vals = np.asarray([sol[var] for var in vars_orig])
+        sol = self.m.getBestSol()
+        primal_val = self.m.getPrimalbound()
+        dual_val = self.m.getDualbound()
+
+        print(
+            f"{self.m.getSolvingTime()} seconds spend searching, best solution so far primal={primal_val} and dual={dual_val}")
         sol_vals = np.asarray([self.m.getSolVal(sol, var) for var in self.m.getVars(transformed=False)])
         action = (action_vars_in, sol_vals[action_vars_in])
 

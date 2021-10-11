@@ -19,8 +19,8 @@ from utils.data_utils import batch_data, MIPBatchHolder, sparse_func
 from utils.visualize import format_metrics
 
 now = dt.now()
-run_directory = config.model_dir + "/" + now.strftime("%Y%m%d-%H%M%S")
-summary = SummaryWriter(run_directory)
+# run_directory = config.model_dir + "/" + now.strftime("%Y%m%d-%H%M%S")
+# summary = SummaryWriter(run_directory)
 load_directory = None  # config.model_dir + "/" + '20210920-064201'
 global_step = 0
 

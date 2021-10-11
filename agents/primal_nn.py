@@ -56,11 +56,17 @@ def extract_current_ip_instance(model: pyscipopt.scip.Model) -> MIPInstance:
     objective_indices = [var2id[v.name] for v in variables]
     objective_mul = [float(v.getObj()) for v in variables]
 
+    primal_obj = model.getPrimalbound()
+    dual_obj = model.getDualbound()
+
+
     if sense == "minimize":
-        ip.less_or_equal(objective_indices, objective_mul, model.getObjlimit() - model.getObjlimit() * 0.1)
+        ip.less_or_equal(objective_indices, objective_mul, primal_obj)
+        ip.greater_or_equal(objective_indices, objective_mul, dual_obj)
         ip.minimize_objective(objective_indices, objective_mul)
     elif sense == "maximize":
-        ip.greater_or_equal(objective_indices, objective_mul, model.getObjlimit() - model.getObjlimit() * 0.1)
+        ip.greater_or_equal(objective_indices, objective_mul, primal_obj)
+        ip.less_or_equal(objective_indices, objective_mul, dual_obj)
         ip.maximize_objective(objective_indices, objective_mul)
     else:
         raise RuntimeError(f"Unknown sense direction! Expected 'maximize/minimize' but found {sense}")
@@ -195,39 +201,38 @@ class NetworkPolicy():
         with torch.no_grad():
             outputs, logits = self.network.forward(obs_holder, self.device)
 
-        mask = torch.unsqueeze(obs_holder.integer_mask, dim=-1)
-        inv_mask = 1 - mask
-        rounded_outputs = torch.round(outputs[-1] * mask) + outputs[-1] * inv_mask
-
-        left_side = torch.sparse.mm(obs_holder.vars_const_graph.t(), rounded_outputs)
-        const_loss = torch.relu(left_side - torch.unsqueeze(obs_holder.const_values, dim=-1))
-        const_loss = torch.sum(const_loss, dim=0).cpu().numpy()
-
-        obj_loss = torch.sparse.mm(obs_holder.vars_obj_graph.t(), rounded_outputs)
-        obj_loss = torch.sum(obj_loss, dim=0).cpu().numpy()
-
-        best_map = sorted(zip(const_loss, obj_loss, range(len(obj_loss))), key=lambda x: (x[0], x[1]))
-        best_map = best_map[0][2]
-
-        # l, loss_c, loss_o, best_logit_map = sum_loss(outputs[-1:], obs_holder)
-        # output = self.dataset.decode_model_outputs(outputs[-1][:, best_logit_map:best_logit_map + 1], obs_holder)
-
-        output = rounded_outputs[:, best_map]
+        # mask = torch.unsqueeze(obs_holder.integer_mask, dim=-1)
+        # inv_mask = 1 - mask
+        # rounded_outputs = torch.round(outputs[-1] * mask) + outputs[-1] * inv_mask
         #
+        # left_side = torch.sparse.mm(obs_holder.vars_const_graph.t(), rounded_outputs)
+        # const_loss = torch.relu(left_side - torch.unsqueeze(obs_holder.const_values, dim=-1))
+        # const_loss = torch.sum(const_loss, dim=0).cpu().numpy()
+        #
+        # obj_loss = torch.sparse.mm(obs_holder.vars_obj_graph.t(), rounded_outputs)
+        # obj_loss = torch.sum(obj_loss, dim=0).cpu().numpy()
+        #
+        # best_map = sorted(zip(const_loss, obj_loss, range(len(obj_loss))), key=lambda x: (x[0], x[1]))
+        # best_map = best_map[0][2]
+        # output = rounded_outputs[:, best_map]
+        #
+        l, loss_c, loss_o, best_logit_map = sum_loss(outputs[-1:], obs_holder)
+        output = self.dataset.decode_model_outputs(outputs[-1][:, best_logit_map:best_logit_map + 1], obs_holder)
+
         # # TODO: Understand what to return
-        left_const = torch.sparse.mm(obs_holder.vars_const_graph.t(), torch.unsqueeze(output, dim=-1))
-        sat_const = torch.relu(torch.squeeze(left_const) - obs_holder.const_values)
-
-        non_zero = sat_const != 0
-        is_zero = sat_const == 0
-
-        sat_const[non_zero] = 1
-        sat_const[is_zero] = 0
-
-        vars_in_sat_const = torch.sparse.mm(obs_holder.binary_vars_const_graph, torch.unsqueeze(sat_const, dim=-1))
-        vars_in_sat_const = torch.squeeze(vars_in_sat_const).cpu().numpy()
-        vars_in_sat_const = {i for i, x in enumerate(vars_in_sat_const) if x == 0}
-
-        action_set = [x for x in action_set if x in vars_in_sat_const]
+        # left_const = torch.sparse.mm(obs_holder.vars_const_graph.t(), torch.unsqueeze(output, dim=-1))
+        # sat_const = torch.relu(torch.squeeze(left_const) - obs_holder.const_values)
+        #
+        # non_zero = sat_const != 0
+        # is_zero = sat_const == 0
+        #
+        # sat_const[non_zero] = 1
+        # sat_const[is_zero] = 0
+        #
+        # vars_in_sat_const = torch.sparse.mm(obs_holder.binary_vars_const_graph, torch.unsqueeze(sat_const, dim=-1))
+        # vars_in_sat_const = torch.squeeze(vars_in_sat_const).cpu().numpy()
+        # vars_in_sat_const = {i for i, x in enumerate(vars_in_sat_const) if x == 0}
+        #
+        # action_set = [x for x in action_set if x in vars_in_sat_const]
 
         return action_set, output.cpu().numpy()[np.int64(action_set)]
