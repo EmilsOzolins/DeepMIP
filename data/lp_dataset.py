@@ -99,15 +99,16 @@ def get_mip_instance(file_name: str, find_solutions=False, augment_objective=Fal
         model = Model()
         model.read(file_name)
 
-        vars_in_prob = set()
-        vars_in_prob.update(model.objective.expr.keys())
-        for const in model.constrs:
-            const_exp = const.expr  # type: mip.LinExpr
-            vars_in_prob.update(const_exp.expr.keys())
+        # vars_in_prob = set()
+        # vars_in_prob.update(model.objective.expr.keys())
+        # for const in model.constrs:
+        #     const_exp = const.expr  # type: mip.LinExpr
+        #     vars_in_prob.update(const_exp.expr.keys())
+        #
+        # variables = model.vars
+        # variables_not_in_prob = set(variables).difference(vars_in_prob)
+        # model.remove(list(variables_not_in_prob))  # Make instances smaller by removing redundant variables
 
-        variables = model.vars
-        variables_not_in_prob = set(variables).difference(vars_in_prob)
-        model.remove(list(variables_not_in_prob))  # Make instances smaller by removing redundant variables
         variables = model.vars
 
         variable_count = len(variables)
@@ -149,7 +150,10 @@ def get_mip_instance(file_name: str, find_solutions=False, augment_objective=Fal
         integer_vars = [variable_map[var] for var in int_vars]
         ip = ip.integer_constraint(integer_vars)
 
+        int_vars = set(int_vars)
         for var in variables:
+            if var in int_vars and var.lb == 0 and var.ub == 1:
+                continue  # Don't include integer variables
             ip = ip.variable_lower_bound(variable_map[var], var.lb)
             ip = ip.variable_upper_bound(variable_map[var], var.ub)
 
