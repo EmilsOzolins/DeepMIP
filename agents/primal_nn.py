@@ -49,32 +49,31 @@ def extract_current_ip_instance(model: pyscipopt.scip.Model) -> MIPInstance:
             raise RuntimeError("Something is wrong with left or right side values!")
 
     sense = model.getObjectiveSense()
-    # objective = model.getObjective()  # type: # pyscipopt.scip.Expr
-    # obj_exp = [(model.getTransformedVar(term.vartuple[0]), mul) for term, mul in objective.terms.items()]
-    # obj_exp = [(var2id[var.name], mul) for var, mul in obj_exp]
 
     objective_indices = [var2id[v.name] for v in variables]
     objective_mul = [float(v.getObj()) for v in variables]
 
     primal_obj = model.getPrimalbound()
-    dual_obj = model.getDualbound()
-
 
     if sense == "minimize":
+        # Add objective function as constraint using primal and dual bound
         ip.less_or_equal(objective_indices, objective_mul, primal_obj)
-        ip.greater_or_equal(objective_indices, objective_mul, dual_obj)
         ip.minimize_objective(objective_indices, objective_mul)
     elif sense == "maximize":
+        # Add objective function as constraint using primal and dual bound
         ip.greater_or_equal(objective_indices, objective_mul, primal_obj)
-        ip.less_or_equal(objective_indices, objective_mul, dual_obj)
         ip.maximize_objective(objective_indices, objective_mul)
     else:
         raise RuntimeError(f"Unknown sense direction! Expected 'maximize/minimize' but found {sense}")
 
-    int_vars = [var2id[var.name] for var in variables if var.vtype() in {"BINARY", "INTEGER"}]
-    ip.integer_constraint(int_vars)
+    int_vars = [var for var in variables if var.vtype() in {"BINARY", "INTEGER"}]
+    int_vars_id = [var2id[var.name] for var in int_vars]
+    ip.integer_constraint(int_vars_id)
 
+    int_vars = set(int_vars)
     for var in variables:
+        if var in int_vars and var.getLbLocal() == 0 and var.getUbLocal() == 1:
+            continue  # Don't include integer variables
         ip.variable_lower_bound(var2id[var.name], var.getLbLocal())
         ip.variable_upper_bound(var2id[var.name], var.getUbLocal())
 
@@ -181,7 +180,7 @@ class NetworkPolicy():
             pass_steps=params.recurrent_steps,
             summary=None
         )
-        run_name = "20211008-161748"
+        run_name = "20211012-173907"
         checkpoint = torch.load(f"/host-dir/mip_models/{run_name}/model.pth")
 
         self.network.load_state_dict(checkpoint["model_state_dict"])
@@ -215,11 +214,18 @@ class NetworkPolicy():
         # best_map = sorted(zip(const_loss, obj_loss, range(len(obj_loss))), key=lambda x: (x[0], x[1]))
         # best_map = best_map[0][2]
         # output = rounded_outputs[:, best_map]
-        #
+
         l, loss_c, loss_o, best_logit_map = sum_loss(outputs[-1:], obs_holder)
         output = self.dataset.decode_model_outputs(outputs[-1][:, best_logit_map:best_logit_map + 1], obs_holder)
 
-        # # TODO: Understand what to return
+        print("Model predicted:",
+              torch.sum(torch.sparse.mm(obs_holder.vars_obj_graph.t(), torch.unsqueeze(output, dim=-1))).cpu().numpy(),
+              "Loss_c", loss_c.cpu().numpy(), "Loss_o", loss_o.cpu().numpy()
+              )
+
+        # TODO: Feasibility pump or something similar could improve situation
+
+        # # # TODO: Understand what to return
         # left_const = torch.sparse.mm(obs_holder.vars_const_graph.t(), torch.unsqueeze(output, dim=-1))
         # sat_const = torch.relu(torch.squeeze(left_const) - obs_holder.const_values)
         #
