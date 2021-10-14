@@ -18,6 +18,11 @@ class MIPInstance:
         self._current_constraint_index = 0
         self._max_var_index = variable_count - 1 if variable_count else 0
 
+        self._equal_indices = []
+        self._equal_multipliers = []
+        self._equal_rhs = []
+        self._current_equal_constraint_index = 0
+
         self._objective_multipliers = []
         self._objective_indices = []
         self._objective_set = False
@@ -27,6 +32,9 @@ class MIPInstance:
         self._fix_percentage = 0.05
         self._augment_steps = 1
         self._presolved_obj_value = float('nan')
+
+        self._relaxed_variables = []
+        self._relaxed_variables_values = []
 
     def greater_or_equal(self, variable_indices: List[int],
                          variable_multipliers: List[float],
@@ -81,8 +89,17 @@ class MIPInstance:
          * variable_indices are vector of variable indices that are present in constraint
          * b is right_side_value.
         """
-        self.less_or_equal(variable_indices, variable_multipliers, right_side_value)
-        self.greater_or_equal(variable_indices, variable_multipliers, right_side_value)
+        self._max_var_index = max(max(variable_indices), self._max_var_index)
+
+        for idx, a in zip(variable_indices, variable_multipliers):
+            self._equal_indices.append((idx, self._current_equal_constraint_index))
+            self._equal_multipliers.append(a)
+
+        self._equal_rhs.append(right_side_value)
+
+        # Increase the constraint index
+        self._current_equal_constraint_index += 1
+
         return self
 
     def minimize_objective(self, variable_indices: List[int], variable_multipliers: List[float]):
@@ -116,13 +133,16 @@ class MIPInstance:
         self.less_or_equal([var_id], [1], ub)
         return self
 
-
     def presolved_objective_value(self, objective_value: float):
         """ Stores scalar value of found objective value. You can use classical solver (e.g., SCIP) to find solution.
         WARNING! This is not guaranteed to be objective value of optimal solution.
         """
         self._presolved_obj_value = objective_value
         return self
+
+    def variable_relaxed_solution(self, var_id, value):
+        self._relaxed_variables.append(var_id)
+        self._relaxed_variables_values.append(value)
 
     def drop_random_constraints(self):
         # randomly select indices for constraints to drop
@@ -248,6 +268,32 @@ class MIPInstance:
         return self.next_variable_index, self.next_constraint_index
 
     @property
+    def variables_equal_constraints_graph(self):
+        """ Variables-equality constraints graph as list of indices in adjacency graph"""
+        i = [x for x, _ in self._equal_indices]
+        j = [x for _, x in self._equal_indices]
+        return torch.as_tensor([i, j])
+
+    @property
+    def variables_equal_constraints_values(self):
+        """ Values of variables-eqality constraints graph"""
+        return torch.as_tensor(self._equal_multipliers, dtype=torch.float32)
+
+    @property
+    def right_values_of_equal_constraints(self):
+        """ Right hand side values for equality constraints """
+        return torch.as_tensor(self._equal_rhs, dtype=torch.float32)
+
+    @property
+    def next_equal_constraint_index(self):
+        """ Next free constraint number """
+        return self._current_equal_constraint_index
+
+    @property
+    def variables_equal_constraints_graph_size(self):
+        return self.next_variable_index, self.next_equal_constraint_index
+
+    @property
     def variables_objective_graph(self):
         graph_indices = [0] * len(self._objective_indices)
         return torch.as_tensor([self._objective_indices, graph_indices], dtype=torch.int32)
@@ -269,6 +315,20 @@ class MIPInstance:
         return torch.as_tensor([1] * self.next_constraint_index, dtype=torch.float32)
 
     @property
+    def equal_constraints_instance_graph(self):
+        """ Returns adjacency matrix indices for equality clauses - instance graph
+        """
+        graph_indices = [0] * self.next_equal_constraint_index
+        clauses_indices = [i for i in range(self.next_equal_constraint_index)]
+        return torch.as_tensor([clauses_indices, graph_indices])
+
+    @property
+    def equal_constraints_instance_graph_values(self):
+        """ Graph as adjacency matrix for equality constraints - instances
+        """
+        return torch.as_tensor([1] * self.next_equal_constraint_index, dtype=torch.float32)
+
+    @property
     def variables_instance_graph(self):
         """ Returns adjacency matrix indices for variables-instance graph
         """
@@ -287,3 +347,9 @@ class MIPInstance:
     @property
     def objective_value(self):
         return torch.as_tensor([self._presolved_obj_value], dtype=torch.float32)
+
+    @property
+    def relaxed_solution(self):
+        """ Returns variable values of relaxed-LP solution"""
+        vals = {var: sol for var, sol in zip(self._relaxed_variables, self._relaxed_variables_values)}
+        return torch.as_tensor([vals[x] if x in vals else 1 for x in range(self.next_variable_index)], dtype=torch.float32)

@@ -4,8 +4,9 @@ from functools import cached_property, lru_cache
 from typing import Tuple, List, Dict, Any
 
 import torch
-from data.mip_instance import MIPInstance
 from torch import Tensor
+
+from data.mip_instance import MIPInstance
 
 
 def batch_data(batch: List[Dict]):
@@ -46,16 +47,26 @@ def batch_as_mip(mip_instances: Tuple[MIPInstance]) -> Dict[str, Tuple]:
     const_offset = 0
     size = [0, 0]
 
+    var_eq_const_edge_indices = []  # Main MIP graph as variables-constraints adjacency matrix
+    var_eq_const_edge_values = []
+    eq_constrain_right_values = []  # Values in the right side of inequalities
+    eq_const_offset = 0
+    eq_size = [0, 0]
+
     objective_edge_indices = []  # Objective value as variables-instance adjacency matrix
     objective_edge_values = []
 
     const_edge_indices = []  # Constraints-instances adjacency matrix (servers as helper)
     const_edge_values = []
 
+    eq_const_edge_indices = []  # Constraints-instances adjacency matrix (servers as helper)
+    eq_const_edge_values = []
+
     variables_edge_indices = []  # Variables-instances adjacency matrix (servers as helper)
     variables_edge_values = []
 
     integer_variables = []
+    relaxed_solution = []
 
     for graph_id, mip in enumerate(mip_instances):
         ind = mip.variables_constraints_graph
@@ -68,6 +79,17 @@ def batch_as_mip(mip_instances: Tuple[MIPInstance]) -> Dict[str, Tuple]:
         var_const_edge_indices.append(ind)
         var_const_edge_values.append(mip.variables_constraints_values)
         constrain_right_values.append(mip.right_values_of_constraints)
+
+        ind = mip.variables_equal_constraints_graph
+        ind[0, :] += var_offset
+        ind[1, :] += eq_const_offset
+
+        eq_size[0] += mip.variables_equal_constraints_graph_size[0]
+        eq_size[1] += mip.variables_equal_constraints_graph_size[1]
+
+        var_eq_const_edge_indices.append(ind)
+        var_eq_const_edge_values.append(mip.variables_equal_constraints_values)
+        eq_constrain_right_values.append(mip.right_values_of_equal_constraints)
 
         obj_ind = mip.variables_objective_graph
         obj_ind[0, :] += var_offset
@@ -83,6 +105,13 @@ def batch_as_mip(mip_instances: Tuple[MIPInstance]) -> Dict[str, Tuple]:
         const_edge_indices.append(const_ind)
         const_edge_values.append(mip.constraints_instance_graph_values)
 
+        const_ind = mip.equal_constraints_instance_graph
+        const_ind[0, :] += eq_const_offset
+        const_ind[1, :] += graph_id
+
+        eq_const_edge_indices.append(const_ind)
+        eq_const_edge_values.append(mip.equal_constraints_instance_graph_values)
+
         var_ind = mip.variables_instance_graph
         var_ind[0, :] += var_offset
         var_ind[1, :] += graph_id
@@ -94,13 +123,22 @@ def batch_as_mip(mip_instances: Tuple[MIPInstance]) -> Dict[str, Tuple]:
         int_vars += var_offset
         integer_variables.append(int_vars)
 
+        relaxed = mip.relaxed_solution
+        relaxed_solution.append(relaxed)
+
         var_offset += mip.next_variable_index
         const_offset += mip.next_constraint_index
+        eq_const_offset += mip.next_equal_constraint_index
 
     var_const_edge_indices = torch.cat(var_const_edge_indices, dim=-1)
     var_const_edge_values = torch.cat(var_const_edge_values, dim=-1)
     constrain_right_values = torch.cat(constrain_right_values, dim=-1)
     constraints = var_const_edge_indices, var_const_edge_values, constrain_right_values, size
+
+    var_eq_const_edge_indices = torch.cat(var_eq_const_edge_indices, dim=-1)
+    var_eq_const_edge_values = torch.cat(var_eq_const_edge_values, dim=-1)
+    eq_constrain_right_values = torch.cat(eq_constrain_right_values, dim=-1)
+    eq_constraints = var_eq_const_edge_indices, var_eq_const_edge_values, eq_constrain_right_values, eq_size
 
     batch_size = len(mip_instances)
     objective_edge_indices = torch.cat(objective_edge_indices, dim=-1)
@@ -111,17 +149,25 @@ def batch_as_mip(mip_instances: Tuple[MIPInstance]) -> Dict[str, Tuple]:
     const_edge_values = torch.cat(const_edge_values, dim=-1)
     consts_per_graph = const_edge_indices, const_edge_values, [size[1], batch_size]
 
+    eq_const_edge_indices = torch.cat(eq_const_edge_indices, dim=-1)
+    eq_const_edge_values = torch.cat(eq_const_edge_values, dim=-1)
+    eq_consts_per_graph = eq_const_edge_indices, eq_const_edge_values, [eq_size[1], batch_size]
+
     variables_edge_indices = torch.cat(variables_edge_indices, dim=-1)
     variables_edge_values = torch.cat(variables_edge_values, dim=-1)
     vars_per_graph = variables_edge_indices, variables_edge_values, [size[0], batch_size]
 
     integer_variables = torch.cat(integer_variables, dim=-1)
+    relaxed_solution = torch.cat(relaxed_solution, dim=-1)
 
     return {"constraints": constraints,
+            "eq_constraints": eq_constraints,
             "objective": objective,
             "consts_per_graph": consts_per_graph,
+            "eq_consts_per_graph": eq_consts_per_graph,
             "vars_per_graph": vars_per_graph,
-            "integer_variables": integer_variables}
+            "integer_variables": integer_variables,
+            "relaxed_solution": relaxed_solution}
 
 
 def batch_as_tensor(batch_data: Tuple[Tensor]):
@@ -133,6 +179,13 @@ class InputDataHolder:
     @property
     @abstractmethod
     def vars_const_graph(self) -> torch.sparse.Tensor:
+        """Returns variables - constraints graph (without equalities)"""
+        pass
+
+    @property
+    @abstractmethod
+    def vars_eq_const_graph(self) -> torch.sparse.Tensor:
+        """Returns variables - equality constraints graph"""
         pass
 
     @property
@@ -147,12 +200,22 @@ class InputDataHolder:
 
     @property
     @abstractmethod
+    def eq_const_values(self) -> torch.Tensor:
+        pass
+
+    @property
+    @abstractmethod
     def vars_obj_graph(self) -> torch.sparse.Tensor:
         pass
 
     @property
     @abstractmethod
     def const_inst_graph(self) -> torch.sparse.Tensor:
+        pass
+
+    @property
+    @abstractmethod
+    def eq_const_inst_graph(self) -> torch.sparse.Tensor:
         pass
 
     @property
@@ -171,6 +234,12 @@ class InputDataHolder:
     @abstractmethod
     def integer_mask(self) -> torch.Tensor:
         """ Returns mask over integer variables where 1 if variable should be integer and 0 for others. """
+        pass
+
+    @property
+    @abstractmethod
+    def relaxed_solution(self) -> torch.Tensor:
+        """Returns relaxed solution of each variable after solving simplex algorithm. """
         pass
 
     @property
@@ -233,6 +302,10 @@ class MIPBatchHolder(InputDataHolder):
         return torch.scatter(mask, dim=0, index=indices, value=1.0)
 
     @cached_property
+    def relaxed_solution(self):
+        return self._batched_data["mip"]["relaxed_solution"].to(device=self._device)
+
+    @cached_property
     def objective_multipliers(self):
         var_count = self.vars_obj_graph.size(0)
 
@@ -247,6 +320,21 @@ class MIPBatchHolder(InputDataHolder):
         data = [x.to(device=self._device) if isinstance(x, torch.Tensor) else x for x in data]
 
         return data if len(data) > 1 else data[0]
+
+    @cached_property
+    def vars_eq_const_graph(self) -> torch.sparse.Tensor:
+        indices, values, _, size = self._batched_data["mip"]["eq_constraints"]
+        return torch.sparse_coo_tensor(indices, values, size=size, device=self._device).coalesce()
+
+    @cached_property
+    def eq_const_values(self) -> torch.Tensor:
+        *_, constraint_values, _ = self._batched_data["mip"]["eq_constraints"]
+        return constraint_values.to(device=self._device)
+
+    @cached_property
+    def eq_const_inst_graph(self) -> torch.sparse.Tensor:
+        indices, values, size = self._batched_data["mip"]["eq_consts_per_graph"]
+        return torch.sparse_coo_tensor(indices, values, size=size, device=self._device).coalesce()
 
 
 # applies the given function to sparse tensor values

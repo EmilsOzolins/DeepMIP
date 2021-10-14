@@ -36,6 +36,13 @@ class MIPNetwork(torch.nn.Module):
             nn.Linear(self.feature_maps, self.feature_maps * 2),
         )
 
+        self.eq_constraint_update = nn.Sequential(
+            nn.Linear(self.feature_maps * 2, self.feature_maps),
+            PairNorm(subtract_mean=False),
+            nn.ReLU(),
+            nn.Linear(self.feature_maps, self.feature_maps * 2),
+        )
+
         self.make_query = nn.Sequential(
             nn.Linear(self.feature_maps + 4, self.feature_maps),
             PairNorm(subtract_mean=False),
@@ -44,7 +51,7 @@ class MIPNetwork(torch.nn.Module):
         )
 
         self.variable_update = nn.Sequential(
-            nn.Linear(self.feature_maps * 3 + 1, self.feature_maps),
+            nn.Linear(self.feature_maps * 4 + 2, self.feature_maps),
             PairNorm(subtract_mean=False),
             nn.ReLU(),
             nn.Linear(self.feature_maps, self.feature_maps),
@@ -64,10 +71,13 @@ class MIPNetwork(torch.nn.Module):
     def forward(self, batch_holder: InputDataHolder, device):
         # TODO: Experiment with disentangled architecture
         var_count, const_count = batch_holder.vars_const_graph.size()
+        _, eq_const_count = batch_holder.vars_eq_const_graph.size()
         _, objective_count = batch_holder.vars_inst_graph.size()
 
-        variables = torch.ones([var_count, self.feature_maps], device=device)
+        variables = torch.ones([var_count, self.feature_maps], device=device) * torch.unsqueeze(
+            batch_holder.relaxed_solution, dim=-1)
         constraints = torch.ones([const_count, self.feature_maps], device=device)
+        eq_constraints = torch.ones([eq_const_count, self.feature_maps], device=device)
 
         outputs = []
 
@@ -109,7 +119,7 @@ class MIPNetwork(torch.nn.Module):
             with torch.enable_grad():
                 var_noisy = torch.cat([variables, self.noise.sample([var_count, 4]).cuda()], dim=-1)
                 query = self.make_query(var_noisy)
-                query = (query+0.5) * int_mask + query * (1 - int_mask)
+                query = (query + 0.5) * int_mask + query * (1 - int_mask)
 
                 left_side_value = torch.sparse.mm(batch_holder.vars_const_graph.t(), query)
                 left_side_value = (left_side_value - const_values) / const_scaler
@@ -117,7 +127,7 @@ class MIPNetwork(torch.nn.Module):
                 #const_loss1 = torch.relu(left_side_value)
 
                 # obj_loss = query * obj_multipliers
-                #const_gradient = torch.autograd.grad([const_loss1.sum()], [query], retain_graph=True)[0]
+                # const_gradient = torch.autograd.grad([const_loss1.sum()], [query], retain_graph=True)[0]
                 # const_gradient1 = torch.autograd.grad([const_loss1.sum()], [query], retain_graph=True)[0]
 
             const_msg = torch.cat([constraints, const_loss], dim=-1)
@@ -128,7 +138,15 @@ class MIPNetwork(torch.nn.Module):
             const2var_msg_pos = torch.sparse.mm(unit_graph_pos, constr_features) / vars_scaler
             const2var_msg_neg = torch.sparse.mm(unit_graph_neg, constr_features) / vars_scaler
 
-            var_msg = torch.cat([variables, const2var_msg_pos, const2var_msg_neg, obj_multipliers], dim=-1)
+            eq_lhs = torch.sparse.mm(batch_holder.vars_eq_const_graph.t(), query)
+            eq_loss = torch.square(torch.unsqueeze(batch_holder.eq_const_values, dim=-1) - eq_lhs)
+            eq_const_msg = torch.cat([eq_constraints, eq_loss], dim=-1)
+            eq_const_tmp = self.eq_constraint_update(eq_const_msg)
+
+            eq_constraints = eq_const_tmp[:, :self.feature_maps] + 0.5 * eq_constraints
+            eq_const2var_msg = torch.sparse.mm(batch_holder.vars_eq_const_graph, eq_const_tmp[:, self.feature_maps:])
+
+            var_msg = torch.cat([variables, const2var_msg_pos, const2var_msg_neg, eq_const2var_msg, obj_multipliers, int_mask], dim=-1)
             variables = self.variable_update(var_msg) + 0.5 * variables
 
             out_vars = self.output(variables)

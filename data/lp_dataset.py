@@ -69,7 +69,7 @@ class LPDataset(MIPDataset, Dataset):
 
     def __getitem__(self, index: int) -> Dict:
         file_name = self._instances[index]
-        item = get_item(file_name, self._should_augment, self._find_solutions, self._augment_objective)
+        item = get_item(file_name, self._should_augment, self._find_solutions)
 
         if self._augment_objective:
             # TODO: Handle optimization sense
@@ -88,13 +88,13 @@ class LPDataset(MIPDataset, Dataset):
 
 
 @config.cache.memoize()
-def get_item(file_name, should_augment, find_solutions, augment_objective):
-    ip = get_mip_instance(file_name, find_solutions=find_solutions, augment_objective=augment_objective)
+def get_item(file_name, should_augment, find_solutions):
+    ip = get_mip_instance(file_name, find_solutions=find_solutions)
     return {"mip": ip.augment() if should_augment else ip,
             "optimal_solution": ip.objective_value}
 
 
-def get_mip_instance(file_name: str, find_solutions=False, augment_objective=False):
+def get_mip_instance(file_name: str, find_solutions=False):
     try:
         model = Model()
         model.read(file_name)
@@ -167,12 +167,23 @@ def get_mip_instance(file_name: str, find_solutions=False, augment_objective=Fal
                 obj_value = model.objective_value * optimization_sign
             else:
                 warnings.warn(f"Solution not found in the time limit,"
-                              f" will use 0 as objective. Return status was {status}")
+                              f" will use 0 as objective. Returned status was {status}")
                 obj_value = 0
             ip = ip.presolved_objective_value(float(obj_value))
         else:
             ip = ip.presolved_objective_value(0)
     except Exception as ex:
         raise Exception(f"Please delete {file_name}") from ex
+
+    model.preprocess = 0
+    model.verbose = 0
+    model.emphasis = 1
+    status = model.optimize(max_seconds=2, relax=True)
+    if status in {OptimizationStatus.OPTIMAL, OptimizationStatus.FEASIBLE}:
+        for var in variables:
+            var = var  # type:mip.Var
+            ip.variable_relaxed_solution(variable_map[var], var.x)
+    else:
+        warnings.warn(f"Relaxed solution not found in the time limit. Returned status was {status}")
 
     return ip

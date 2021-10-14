@@ -63,7 +63,7 @@ def main():
     # train_dataset = LPDataset("/host-dir/mip_data/item_placement/train_augment_10_100")
     # train_dataset = train_dataset + LPDataset("/host-dir/mip_data/item_placement/train")
     # val_dataset = LPDataset("/host-dir/mip_data/item_placement/valid")
-    val_dataset = LPDataset("/host-dir/mip_data/item_placement/valid_augment_full", find_solutions=True)
+    val_dataset = LPDataset("/host-dir/mip_data/item_placement/valid_augment_full")
 
     if config.prefill_cache:
         train_dataset.prefill_cache()  # Warms the cache for training once iterating over dataset
@@ -264,6 +264,11 @@ def sum_loss_sumscaled(asn_list, batch_holder, eps=1e-3):
     # scalers2 = torch.unsqueeze(torch.sparse.sum(unit_graph, dim=0).to_dense(), dim=-1)
     scalers1 = 1.0 / scalers1
 
+    abs_graph = sparse_func(batch_holder.vars_eq_const_graph, torch.square)
+    scalers1eq = torch.sqrt(torch.sparse.sum(abs_graph, dim=0).to_dense())
+    scalers1eq = torch.unsqueeze(torch.clamp(scalers1eq, min=1e-3), dim=-1)
+    scalers1eq = 1.0 / scalers1eq
+
     if batch_holder.vars_obj_graph._nnz() == 0:
         scalers1_o = 1.
     else:
@@ -279,14 +284,18 @@ def sum_loss_sumscaled(asn_list, batch_holder, eps=1e-3):
 
     for asn in asn_list:
         left_side = torch.sparse.mm(batch_holder.vars_const_graph.t(), asn)
+        left_side_eq = torch.sparse.mm(batch_holder.vars_eq_const_graph.t(), asn)
         loss_c = torch.relu(eps + (left_side - torch.unsqueeze(batch_holder.const_values, dim=-1)) * scalers1)
+        loss_c_eq = torch.square(torch.unsqueeze(batch_holder.eq_const_values, dim=-1) - left_side_eq) * scalers1eq
         # bounds_loss_0 = torch.square(torch.relu(-asn))
         # bounds_loss_1 = torch.square(torch.relu(asn-1))
+
+        loss_c_eq = torch.sparse.mm(batch_holder.eq_const_inst_graph.t(), loss_c_eq)
 
         loss_c = torch.square(loss_c)
         loss_c = torch.sparse.mm(batch_holder.const_inst_graph.t(), loss_c)
         # loss_c += torch.mean(bounds_loss_0) + torch.mean(bounds_loss_1)  # todo correct per graph loss
-        loss_c = torch.sqrt(loss_c + 1e-6) - np.sqrt(1e-6)
+        loss_c = torch.sqrt(loss_c + 1e-6) - np.sqrt(1e-6) + loss_c_eq
         loss_o = torch.sparse.mm(batch_holder.vars_obj_graph.t(), asn)
         loss_o_scaled = loss_o * scalers1_o
 
