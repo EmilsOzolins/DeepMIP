@@ -19,9 +19,9 @@ from utils.data_utils import batch_data, MIPBatchHolder, sparse_func
 from utils.visualize import format_metrics
 
 now = dt.now()
-# run_directory = config.model_dir + "/" + now.strftime("%Y%m%d-%H%M%S")
-# summary = SummaryWriter(run_directory)
-load_directory = None  # config.model_dir + "/" + '20210920-064201'
+run_directory = config.model_dir + "/" + now.strftime("%Y%m%d-%H%M%S")
+summary = SummaryWriter(run_directory)
+load_directory = None #config.model_dir + "/" + '20211013-145400'
 global_step = 0
 
 
@@ -296,12 +296,12 @@ def sum_loss_sumscaled(asn_list, batch_holder, eps=1e-3):
         per_graph_loss_avg = torch.sum(sorted_loss * costs, dim=-1) / torch.sum(costs)
 
         sum_loss += torch.mean(per_graph_loss_avg)
-        sum_loss_c += torch.mean(loss_c)
-        sum_loss_o += torch.mean(loss_o)
+        #sum_loss_c += torch.mean(loss_c)
+        #sum_loss_o += torch.mean(loss_o)
 
     best_logit_map = torch.argmin(torch.sum(per_graph_loss, dim=0))
 
-    return sum_loss, sum_loss_c, sum_loss_o, best_logit_map
+    return sum_loss, torch.mean(loss_c), torch.mean(loss_o), best_logit_map
 
 
 def sum_loss(asn_list, batch_holder):
