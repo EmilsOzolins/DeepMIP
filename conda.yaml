@@ -23,6 +23,7 @@ dependencies:
     - comet_ml~=3.14.0
     - ortools~=9.0
     - mip~=1.13.0
+    - diskcache~=5.2.1
 
 # Please do not hesitate to send us also a snapshot of your final
 # environment to help us troubleshoot potential installation issues:

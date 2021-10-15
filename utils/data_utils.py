@@ -353,26 +353,30 @@ def make_sparse_unit(vars_obj_graph):
                                         device=vars_obj_graph.device)
     return abs_graph
 
+
 def ssqrt(x, alpha=1):
     """Signed sqrt
     larger alpha makes the function more non-linear
     """
-    return x * torch.rsqrt(1 + alpha*torch.abs(x))
+    return x * torch.rsqrt(1 + alpha * torch.abs(x))
+
 
 def sparse_dense_mul(s, d):
-  i = s._indices()
-  v = s._values()
-  dv = d[i[0,:], i[1,:]]  # get values from relevant entries of dense matrix
-  return torch.sparse.FloatTensor(i, v * dv, s.size())
+    i = s._indices()
+    v = s._values()
+    dv = d[i[0, :], i[1, :]]  # get values from relevant entries of dense matrix
+    return torch.sparse.FloatTensor(i, v * dv, s.size())
+
 
 def sparse_dense_mul_dim0(s, d):
-  i = s._indices()
-  v = s._values()
-  dv = d[i[0,:]]  # get values from relevant entries of dense matrix
-  return torch.sparse.FloatTensor(i, v * dv, s.size())
+    i = s._indices()
+    v = s._values()
+    dv = d[i[0, :]]  # get values from relevant entries of dense matrix
+    return torch.sparse.FloatTensor(i, v * dv, s.size())
+
 
 def sparse_dense_mul_dim1(s, d):
-  i = s._indices()
-  v = s._values()
-  dv = d[i[0,:]]  # get values from relevant entries of dense matrix
-  return torch.sparse.FloatTensor(i, v * dv, s.size())
+    i = s._indices()
+    v = s._values()
+    dv = d[i[1, :]]  # get values from relevant entries of dense matrix
+    return torch.sparse.FloatTensor(i, v * dv, s.size())
