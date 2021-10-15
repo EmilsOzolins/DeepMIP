@@ -154,8 +154,12 @@ def get_mip_instance(file_name: str, find_solutions=False):
         for var in variables:
             if var in int_vars and var.lb == 0 and var.ub == 1:
                 continue  # Don't include integer variables
-            ip = ip.variable_lower_bound(variable_map[var], var.lb)
-            ip = ip.variable_upper_bound(variable_map[var], var.ub)
+
+            if var.lb == var.ub:
+                ip = ip.equal([variable_map[var]], [1], var.lb)
+            else:
+                ip = ip.variable_lower_bound(variable_map[var], var.lb)
+                ip = ip.variable_upper_bound(variable_map[var], var.ub)
 
         if find_solutions:
             model.preprocess = 0
