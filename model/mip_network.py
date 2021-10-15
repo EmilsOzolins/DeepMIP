@@ -29,7 +29,7 @@ class MIPNetwork(torch.nn.Module):
         self.pass_steps = pass_steps
         self.summary = summary
         self.global_step = 0
-        self.use_preconditioning = True
+        self.use_preconditioning = False
         self.continuous_var_scale = 0.1
 
         self.constraint_update = nn.Sequential(
