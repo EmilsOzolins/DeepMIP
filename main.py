@@ -15,13 +15,13 @@ from metrics.discrete_metrics import DiscretizationMetrics
 from metrics.general_metrics import AverageMetrics, MetricsHandler
 from model.mip_network import MIPNetwork
 from optimizers.adam_clip import Adam_clip
-from utils.data_utils import batch_data, MIPBatchHolder, sparse_func
+from utils.data_utils import batch_data, MIPBatchHolder, sparse_func, make_sparse_unit
 from utils.visualize import format_metrics
 
 now = dt.now()
 run_directory = config.model_dir + "/" + now.strftime("%Y%m%d-%H%M%S")
 summary = SummaryWriter(run_directory)
-load_directory = None #config.model_dir + "/" + '20211013-145400'
+load_directory = None  # config.model_dir + "/" + '20211013-145400'
 global_step = 0
 
 
@@ -283,14 +283,38 @@ def sum_loss_sumscaled(asn_list, batch_holder, eps=1e-3):
     costs = torch.square(torch.arange(1, logit_maps + 1, dtype=torch.float32, device=asn_list[0].device))
 
     for asn in asn_list:
-        left_side = torch.sparse.mm(batch_holder.vars_const_graph.t(), asn)
+        # Calculate mean squared error for equality constraints
         left_side_eq = torch.sparse.mm(batch_holder.vars_eq_const_graph.t(), asn)
-        loss_c = torch.relu(eps + (left_side - torch.unsqueeze(batch_holder.const_values, dim=-1)) * scalers1)
         loss_c_eq = torch.square(torch.unsqueeze(batch_holder.eq_const_values, dim=-1) - left_side_eq) * scalers1eq
-        # bounds_loss_0 = torch.square(torch.relu(-asn))
-        # bounds_loss_1 = torch.square(torch.relu(asn-1))
-
         loss_c_eq = torch.sparse.mm(batch_holder.eq_const_inst_graph.t(), loss_c_eq)
+
+        # Normalize equality constraints with single variable
+        bin_var_eq_const_g = make_sparse_unit(batch_holder.vars_eq_const_graph)
+        vars_in_const = torch.sparse.sum(bin_var_eq_const_g, dim=0).to_dense()
+        vars_in_const = torch.eq(vars_in_const, torch.ones_like(vars_in_const)).float()
+        vars_in_const = torch.unsqueeze(vars_in_const, dim=-1)
+
+        eq_left_side = torch.sparse.mm(batch_holder.vars_eq_const_graph.t(), asn)
+        indices = batch_holder.vars_eq_const_graph._indices()
+
+        eq_const_values = torch.unsqueeze(batch_holder.eq_const_values, dim=-1)
+
+        single_const = eq_left_side * vars_in_const + torch.ones_like(eq_left_side) * (1 - vars_in_const)
+        single_values = eq_const_values * vars_in_const + torch.ones_like(eq_const_values) * (1 - vars_in_const)
+
+        asn[indices[0, :]] /= single_const[indices[1, :]]
+        asn[indices[0, :]] *= single_values[indices[1, :]]
+
+        # Normalize equality constraints with many variables
+        # many_const = eq_left_side * (1 - vars_in_const) + torch.ones_like(eq_left_side) * vars_in_const
+        # many_values = eq_const_values * (1 - vars_in_const) + torch.ones_like(eq_const_values) * vars_in_const
+        #
+        # asn[indices[0, :]] /= many_const[indices[1, :]]
+        # asn[indices[0, :]] *= many_values[indices[1, :]]
+
+        # Calculate loss for the rest of the constraints
+        left_side = torch.sparse.mm(batch_holder.vars_const_graph.t(), asn)
+        loss_c = torch.relu(eps + (left_side - torch.unsqueeze(batch_holder.const_values, dim=-1)) * scalers1)
 
         loss_c = torch.square(loss_c)
         loss_c = torch.sparse.mm(batch_holder.const_inst_graph.t(), loss_c)
@@ -305,8 +329,8 @@ def sum_loss_sumscaled(asn_list, batch_holder, eps=1e-3):
         per_graph_loss_avg = torch.sum(sorted_loss * costs, dim=-1) / torch.sum(costs)
 
         sum_loss += torch.mean(per_graph_loss_avg)
-        #sum_loss_c += torch.mean(loss_c)
-        #sum_loss_o += torch.mean(loss_o)
+        # sum_loss_c += torch.mean(loss_c)
+        # sum_loss_o += torch.mean(loss_o)
 
     best_logit_map = torch.argmin(torch.sum(per_graph_loss, dim=0))
 

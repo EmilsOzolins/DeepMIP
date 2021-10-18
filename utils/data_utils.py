@@ -136,8 +136,8 @@ def batch_as_mip(mip_instances: Tuple[MIPInstance]) -> Dict[str, Tuple]:
     constraints = var_const_edge_indices, var_const_edge_values, constrain_right_values, size
 
     var_eq_const_edge_indices = torch.cat(var_eq_const_edge_indices, dim=-1)
-    var_eq_const_edge_values = torch.cat(var_eq_const_edge_values, dim=-1)
     eq_constrain_right_values = torch.cat(eq_constrain_right_values, dim=-1)
+    var_eq_const_edge_values = torch.cat(var_eq_const_edge_values, dim=-1)
     eq_constraints = var_eq_const_edge_indices, var_eq_const_edge_values, eq_constrain_right_values, eq_size
 
     batch_size = len(mip_instances)

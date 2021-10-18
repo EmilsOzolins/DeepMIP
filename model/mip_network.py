@@ -29,7 +29,7 @@ class MIPNetwork(torch.nn.Module):
         self.pass_steps = pass_steps
         self.summary = summary
         self.global_step = 0
-        self.use_preconditioning = True
+        self.use_preconditioning = False
         self.continuous_var_scale = 0.1
 
         self.constraint_update = nn.Sequential(
@@ -77,14 +77,16 @@ class MIPNetwork(torch.nn.Module):
         _, eq_const_count = batch_holder.vars_eq_const_graph.size()
         _, objective_count = batch_holder.vars_inst_graph.size()
 
-        variables = torch.ones([var_count, self.feature_maps], device=device) * torch.unsqueeze(
-            batch_holder.relaxed_solution, dim=-1)
+        const_values = torch.unsqueeze(batch_holder.const_values, dim=-1)
+        eq_const_values = torch.unsqueeze(batch_holder.eq_const_values, dim=-1)
+        relaxed_solution = torch.unsqueeze(batch_holder.relaxed_solution, dim=-1)
+
+        variables = torch.ones([var_count, self.feature_maps], device=device) * relaxed_solution
         constraints = torch.ones([const_count, self.feature_maps], device=device)
         eq_constraints = torch.ones([eq_const_count, self.feature_maps], device=device)
 
         outputs = []
 
-        const_values = torch.unsqueeze(batch_holder.const_values, dim=-1)
         obj_multipliers = torch.unsqueeze(batch_holder.objective_multipliers, dim=-1)
         obj_multipliers /= torch.sqrt(torch.mean(torch.square(obj_multipliers))) + 1e-6
 
@@ -103,6 +105,11 @@ class MIPNetwork(torch.nn.Module):
         const_scaler = torch.sparse.sum(abs_graph, dim=0).to_dense() + 1e-6
         const_scaler_1d = torch.sqrt(const_scaler)
         const_scaler = torch.unsqueeze(const_scaler_1d, dim=-1)
+
+        abs_graph_eq = sparse_func(batch_holder.vars_eq_const_graph, torch.square)
+        eq_const_scaler = torch.sparse.sum(abs_graph_eq, dim=0).to_dense() + 1e-6
+        eq_const_scaler_1d = torch.sqrt(eq_const_scaler)
+        eq_const_scaler = torch.unsqueeze(eq_const_scaler_1d, dim=-1)
 
         # TODO: Experiment with mean
         vars_scaler = torch.sparse.sum(abs_graph, dim=-1).to_dense() + 1e-6
@@ -141,8 +148,8 @@ class MIPNetwork(torch.nn.Module):
             const2var_msg_pos = torch.sparse.mm(unit_graph_pos, constr_features) / vars_scaler
             const2var_msg_neg = torch.sparse.mm(unit_graph_neg, constr_features) / vars_scaler
 
-            eq_lhs = torch.sparse.mm(batch_holder.vars_eq_const_graph.t(), query)
-            eq_loss = torch.square(torch.unsqueeze(batch_holder.eq_const_values, dim=-1) - eq_lhs)
+            eq_lhs = torch.sparse.mm(batch_holder.vars_eq_const_graph.t(), query) / eq_const_scaler
+            eq_loss = torch.square(eq_const_values - eq_lhs)
             eq_const_msg = torch.cat([eq_constraints, eq_loss], dim=-1)
             eq_const_tmp = self.eq_constraint_update(eq_const_msg)
 
@@ -153,7 +160,8 @@ class MIPNetwork(torch.nn.Module):
             variables = self.variable_update(var_msg) + 0.5 * variables
 
             out_vars = self.output(variables)
-            if self.use_preconditioning: out_vars = out_vars * logit_scalers + out_vars.detach() * (1 - logit_scalers)
+            if self.use_preconditioning:
+                out_vars = out_vars * logit_scalers + out_vars.detach() * (1 - logit_scalers)
             int_noise = self.noise.sample(out_vars.size()).cuda()
 
             # Noise is not applied to variables that doesn't have integer constraint
