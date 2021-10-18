@@ -53,15 +53,15 @@ def extract_current_ip_instance(model: pyscipopt.scip.Model) -> MIPInstance:
     objective_indices = [var2id[v.name] for v in variables]
     objective_mul = [float(v.getObj()) for v in variables]
 
-    primal_obj = model.getPrimalbound()
+    # primal_obj = model.getPrimalbound()
 
     if sense == "minimize":
         # Add objective function as constraint using primal and dual bound
-        ip.less_or_equal(objective_indices, objective_mul, primal_obj)
+        # ip.less_or_equal(objective_indices, objective_mul, primal_obj)
         ip.minimize_objective(objective_indices, objective_mul)
     elif sense == "maximize":
         # Add objective function as constraint using primal and dual bound
-        ip.greater_or_equal(objective_indices, objective_mul, primal_obj)
+        # ip.greater_or_equal(objective_indices, objective_mul, primal_obj)
         ip.maximize_objective(objective_indices, objective_mul)
     else:
         raise RuntimeError(f"Unknown sense direction! Expected 'maximize/minimize' but found {sense}")
@@ -70,12 +70,18 @@ def extract_current_ip_instance(model: pyscipopt.scip.Model) -> MIPInstance:
     int_vars_id = [var2id[var.name] for var in int_vars]
     ip.integer_constraint(int_vars_id)
 
-    int_vars = set(int_vars)
     for var in variables:
-        if var in int_vars and var.getLbLocal() == 0 and var.getUbLocal() == 1:
+        if var.vtype() in {"BINARY", "INTEGER"} and var.getLbLocal() == 0 and var.getUbLocal() == 1:
             continue  # Don't include integer variables
+
+        # if var.getLbLocal() == var.getUbLocal():
+        #     ip.equal([var2id[var.name]], [1], var.getUbLocal())
+        # else:
         ip.variable_lower_bound(var2id[var.name], var.getLbLocal())
         ip.variable_upper_bound(var2id[var.name], var.getUbLocal())
+
+    for var in variables:
+        ip.variable_relaxed_solution(var2id[var.name], var.getLPSol())
 
     return ip
 
@@ -166,6 +172,35 @@ class Instance2Holder(InputDataHolder):
 
         return data if len(data) > 1 else data[0]
 
+    @property
+    def vars_eq_const_graph(self) -> torch.sparse.Tensor:
+        indices = self._ip.variables_equal_constraints_graph
+        values = self._ip.variables_equal_constraints_values
+        size = self._ip.variables_equal_constraints_graph_size
+
+        torch_graph = torch.sparse_coo_tensor(indices, values,
+                                              size, dtype=torch.float32,
+                                              device=self._device)
+        return torch_graph.coalesce()
+
+    @property
+    def eq_const_values(self) -> torch.Tensor:
+        rhs = self._ip.right_values_of_equal_constraints
+        return torch.as_tensor(rhs, device=self._device, dtype=torch.float32)
+
+    @property
+    def eq_const_inst_graph(self) -> torch.sparse.Tensor:
+        indices = self._ip.equal_constraints_instance_graph
+        values = self._ip.equal_constraints_instance_graph_values
+        _, const_count = self._ip.variables_equal_constraints_graph_size
+
+        return torch.sparse_coo_tensor(indices, values, size=[const_count, 1], device=self._device).coalesce()
+
+    @property
+    def relaxed_solution(self) -> torch.Tensor:
+        sol = self._ip.relaxed_solution
+        return torch.as_tensor(sol, device=self._device, dtype=torch.float32)
+
 
 class NetworkPolicy():
     def __init__(self, problem):
@@ -180,7 +215,7 @@ class NetworkPolicy():
             pass_steps=params.recurrent_steps,
             summary=None
         )
-        run_name = "20211012-173907"
+        run_name = "20211014-162235"
         checkpoint = torch.load(f"/host-dir/mip_models/{run_name}/model.pth")
 
         self.network.load_state_dict(checkpoint["model_state_dict"])
