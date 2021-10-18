@@ -106,10 +106,13 @@ class MIPNetwork(torch.nn.Module):
         const_scaler_1d = torch.sqrt(const_scaler)
         const_scaler = torch.unsqueeze(const_scaler_1d, dim=-1)
 
-        abs_graph_eq = sparse_func(batch_holder.vars_eq_const_graph, torch.square)
-        eq_const_scaler = torch.sparse.sum(abs_graph_eq, dim=0).to_dense() + 1e-6
-        eq_const_scaler_1d = torch.sqrt(eq_const_scaler)
-        eq_const_scaler = torch.unsqueeze(eq_const_scaler_1d, dim=-1)
+        if batch_holder.vars_eq_const_graph._nnz()>0:
+            abs_graph_eq = sparse_func(batch_holder.vars_eq_const_graph, torch.square)
+            eq_const_scaler = torch.sparse.sum(abs_graph_eq, dim=0).to_dense() + 1e-6
+            eq_const_scaler_1d = torch.sqrt(eq_const_scaler)
+            eq_const_scaler = torch.unsqueeze(eq_const_scaler_1d, dim=-1)
+        else:
+            eq_const_scaler = 1
 
         # TODO: Experiment with mean
         vars_scaler = torch.sparse.sum(abs_graph, dim=-1).to_dense() + 1e-6

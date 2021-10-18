@@ -23,11 +23,17 @@ class MIPMetrics(StackableMetrics):
 
         max_violation = self._max_constraints(prediction, vars_const_graph, const_values)
         mean_violation = self._max_constraints(prediction, vars_const_graph, const_values, aggregation_func=torch.mean)
-        max_eq_violation = self._max_eq_constraints(prediction, vars_eq_const_graph, eq_const_values)
-        mean_eq_violation = self._max_constraints(prediction, vars_eq_const_graph, eq_const_values, aggregation_func=torch.mean)
-
         fully_sat_mips = self._mask_satisfied_instances(const_inst_graph, const_values, prediction, vars_const_graph)
-        fully_sat_eq_mips = self._mask_satisfied_eq_instances(eq_const_inst_graph, eq_const_values, prediction, vars_eq_const_graph)
+
+        if vars_eq_const_graph._nnz()>0:
+            max_eq_violation = self._max_eq_constraints(prediction, vars_eq_const_graph, eq_const_values)
+            mean_eq_violation = self._max_constraints(prediction, vars_eq_const_graph, eq_const_values, aggregation_func=torch.mean)
+            fully_sat_eq_mips = self._mask_satisfied_eq_instances(eq_const_inst_graph, eq_const_values, prediction, vars_eq_const_graph)
+        else:
+            max_eq_violation = torch.tensor(0.)
+            mean_eq_violation = torch.tensor(0.)
+            fully_sat_eq_mips = torch.ones_like(fully_sat_mips)
+
         fully_sat_mips_inst = torch.logical_and(fully_sat_mips, fully_sat_eq_mips)
         fully_sat_mips = torch.mean(fully_sat_mips_inst.float())
 
@@ -178,14 +184,20 @@ class MIPMetrics_train(MIPMetrics):
 
         max_violation = self._max_constraints(logits, vars_const_graph, const_values)
         mean_violation = self._max_constraints(logits, vars_const_graph, const_values, aggregation_func=torch.mean)
-        max_eq_violation = self._max_eq_constraints(logits, vars_eq_const_graph, eq_const_values)
-        mean_eq_violation = self._max_constraints(logits, vars_eq_const_graph, eq_const_values, aggregation_func=torch.mean)
+        fully_sat_mips = self._mask_satisfied_instances(const_inst_graph, const_values, logits, vars_const_graph)
+
+        if vars_eq_const_graph._nnz()>0:
+            max_eq_violation = self._max_eq_constraints(logits, vars_eq_const_graph, eq_const_values)
+            mean_eq_violation = self._max_constraints(logits, vars_eq_const_graph, eq_const_values, aggregation_func=torch.mean)
+            fully_sat_eq_mips = self._mask_satisfied_eq_instances(eq_const_inst_graph, eq_const_values, prediction, vars_eq_const_graph)
+        else:
+            max_eq_violation = torch.tensor(0.)
+            mean_eq_violation = torch.tensor(0.)
+            fully_sat_eq_mips = torch.ones_like(fully_sat_mips)
 
         sat_const = self._satisfied_constraints(logits, vars_const_graph, const_values)
         sat_eq_const = self._satisfied_eq_constraints(prediction, vars_eq_const_graph, eq_const_values)
 
-        fully_sat_mips = self._mask_satisfied_instances(const_inst_graph, const_values, logits, vars_const_graph)
-        fully_sat_eq_mips = self._mask_satisfied_eq_instances(eq_const_inst_graph, eq_const_values, prediction, vars_eq_const_graph)
         fully_sat_mips = torch.logical_and(fully_sat_mips, fully_sat_eq_mips).float()
         fully_sat_mips = torch.mean(fully_sat_mips)
 
