@@ -289,21 +289,27 @@ def sum_loss_sumscaled(asn_list, batch_holder, eps=1e-3):
         loss_c_eq = torch.sparse.mm(batch_holder.eq_const_inst_graph.t(), loss_c_eq)
 
         # Normalize equality constraints with single variable
-        bin_var_eq_const_g = make_sparse_unit(batch_holder.vars_eq_const_graph)
-        vars_in_const = torch.sparse.sum(bin_var_eq_const_g, dim=0).to_dense()
-        vars_in_const = torch.eq(vars_in_const, torch.ones_like(vars_in_const)).float()
-        vars_in_const = torch.unsqueeze(vars_in_const, dim=-1)
 
-        eq_left_side = torch.sparse.mm(batch_holder.vars_eq_const_graph.t(), asn)
-        indices = batch_holder.vars_eq_const_graph._indices()
+        # Only works if coefficients == 1
+        dif = (torch.unsqueeze(batch_holder.eq_const_values, dim=-1) - left_side_eq) / torch.unsqueeze(torch.sparse.sum(batch_holder.vars_eq_const_graph, dim=0).to_dense(), dim=-1)
+        prediction_dif = torch.sparse.mm(batch_holder.vars_eq_const_graph, dif)
+        prediction_weight = torch.unsqueeze(torch.sparse.sum(batch_holder.vars_eq_const_graph, dim=1), dim=-1).to_dense()
+        prediction = asn + prediction_dif / torch.maximum(prediction_weight, torch.ones_like(asn))
 
-        eq_const_values = torch.unsqueeze(batch_holder.eq_const_values, dim=-1)
+        # vars_in_const = torch.sparse.sum(bin_var_eq_const_g, dim=0).to_dense()
+        # vars_in_const = torch.eq(vars_in_const, torch.ones_like(vars_in_const)).float()
+        # vars_in_const = torch.unsqueeze(vars_in_const, dim=-1)
 
-        single_const = eq_left_side * vars_in_const + torch.ones_like(eq_left_side) * (1 - vars_in_const)
-        single_values = eq_const_values * vars_in_const + torch.ones_like(eq_const_values) * (1 - vars_in_const)
-
-        asn[indices[0, :]] /= single_const[indices[1, :]]
-        asn[indices[0, :]] *= single_values[indices[1, :]]
+        # eq_left_side = torch.sparse.mm(batch_holder.vars_eq_const_graph.t(), asn)
+        # indices = batch_holder.vars_eq_const_graph._indices()
+        #
+        # eq_const_values = torch.unsqueeze(batch_holder.eq_const_values, dim=-1)
+        #
+        # single_const = eq_left_side * vars_in_const + torch.ones_like(eq_left_side) * (1 - vars_in_const)
+        # single_values = eq_const_values * vars_in_const + torch.ones_like(eq_const_values) * (1 - vars_in_const)
+        #
+        # asn[indices[0, :]] /= single_const[indices[1, :]]
+        # asn[indices[0, :]] *= single_values[indices[1, :]]
 
         # Normalize equality constraints with many variables
         # many_const = eq_left_side * (1 - vars_in_const) + torch.ones_like(eq_left_side) * vars_in_const
@@ -313,14 +319,14 @@ def sum_loss_sumscaled(asn_list, batch_holder, eps=1e-3):
         # asn[indices[0, :]] *= many_values[indices[1, :]]
 
         # Calculate loss for the rest of the constraints
-        left_side = torch.sparse.mm(batch_holder.vars_const_graph.t(), asn)
+        left_side = torch.sparse.mm(batch_holder.vars_const_graph.t(), prediction)
         loss_c = torch.relu(eps + (left_side - torch.unsqueeze(batch_holder.const_values, dim=-1)) * scalers1)
 
         loss_c = torch.square(loss_c)
         loss_c = torch.sparse.mm(batch_holder.const_inst_graph.t(), loss_c)
         # loss_c += torch.mean(bounds_loss_0) + torch.mean(bounds_loss_1)  # todo correct per graph loss
         loss_c = torch.sqrt(loss_c + 1e-6) - np.sqrt(1e-6) + loss_c_eq
-        loss_o = torch.sparse.mm(batch_holder.vars_obj_graph.t(), asn)
+        loss_o = torch.sparse.mm(batch_holder.vars_obj_graph.t(), prediction)
         loss_o_scaled = loss_o * scalers1_o
 
         per_graph_loss = loss_c + loss_o_scaled * params.objective_loss_scale

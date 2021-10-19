@@ -82,8 +82,8 @@ class MIPNetwork(torch.nn.Module):
         relaxed_solution = torch.unsqueeze(batch_holder.relaxed_solution, dim=-1)
 
         variables = torch.ones([var_count, self.feature_maps], device=device) * relaxed_solution
-        constraints = torch.ones([const_count, self.feature_maps], device=device)
-        eq_constraints = torch.ones([eq_const_count, self.feature_maps], device=device)
+        constraints = torch.sparse.mm(batch_holder.vars_const_graph.t(), variables)
+        eq_constraints = torch.sparse.mm(batch_holder.vars_eq_const_graph.t(), variables)
 
         outputs = []
 
@@ -145,7 +145,7 @@ class MIPNetwork(torch.nn.Module):
 
             const_msg = torch.cat([constraints, const_loss], dim=-1)
             const_tmp = self.constraint_update(const_msg)
-            constraints = const_tmp[:, :self.feature_maps] + 0.5 * constraints
+            constraints = const_tmp[:, :self.feature_maps] + 0.5 * constraints  # TODO: No residual connections?
 
             constr_features = const_tmp[:, self.feature_maps:]
             const2var_msg_pos = torch.sparse.mm(unit_graph_pos, constr_features) / vars_scaler
