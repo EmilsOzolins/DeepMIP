@@ -10,6 +10,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 import config
 import hyperparams as params
+from data.kanapsack import BinaryKnapsackDataset
 from data.lp_dataset import LPDataset
 from metrics.discrete_metrics import DiscretizationMetrics
 from metrics.general_metrics import AverageMetrics, MetricsHandler
@@ -264,10 +265,13 @@ def sum_loss_sumscaled(asn_list, batch_holder, eps=1e-3):
     # scalers2 = torch.unsqueeze(torch.sparse.sum(unit_graph, dim=0).to_dense(), dim=-1)
     scalers1 = 1.0 / scalers1
 
-    abs_graph = sparse_func(batch_holder.vars_eq_const_graph, torch.square)
-    scalers1eq = torch.sqrt(torch.sparse.sum(abs_graph, dim=0).to_dense())
-    scalers1eq = torch.unsqueeze(torch.clamp(scalers1eq, min=1e-3), dim=-1)
-    scalers1eq = 1.0 / scalers1eq
+    if batch_holder.vars_eq_const_graph._nnz() > 0:
+        abs_graph = sparse_func(batch_holder.vars_eq_const_graph, torch.square)
+        scalers1eq = torch.sqrt(torch.sparse.sum(abs_graph, dim=0).to_dense())
+        scalers1eq = torch.unsqueeze(torch.clamp(scalers1eq, min=1e-3), dim=-1)
+        scalers1eq = 1.0 / scalers1eq
+    else:
+        scalers1eq = 1.
 
     if batch_holder.vars_obj_graph._nnz() == 0:
         scalers1_o = 1.
@@ -291,10 +295,13 @@ def sum_loss_sumscaled(asn_list, batch_holder, eps=1e-3):
         # Normalize equality constraints with single variable
 
         # Only works if coefficients == 1
-        dif = (torch.unsqueeze(batch_holder.eq_const_values, dim=-1) - left_side_eq) / torch.unsqueeze(torch.sparse.sum(batch_holder.vars_eq_const_graph, dim=0).to_dense(), dim=-1)
-        prediction_dif = torch.sparse.mm(batch_holder.vars_eq_const_graph, dif)
-        prediction_weight = torch.unsqueeze(torch.sparse.sum(batch_holder.vars_eq_const_graph, dim=1), dim=-1).to_dense()
-        prediction = asn + prediction_dif / torch.maximum(prediction_weight, torch.ones_like(asn))
+        if batch_holder.vars_eq_const_graph._nnz() > 0:
+            dif = (torch.unsqueeze(batch_holder.eq_const_values, dim=-1) - left_side_eq) / torch.unsqueeze(torch.sparse.sum(batch_holder.vars_eq_const_graph, dim=0).to_dense(), dim=-1)
+            prediction_dif = torch.sparse.mm(batch_holder.vars_eq_const_graph, dif)
+            prediction_weight = torch.unsqueeze(torch.sparse.sum(batch_holder.vars_eq_const_graph, dim=1), dim=-1).to_dense()
+            prediction = asn + prediction_dif / torch.maximum(prediction_weight, torch.ones_like(asn))
+        else:
+            prediction = asn
 
         # vars_in_const = torch.sparse.sum(bin_var_eq_const_g, dim=0).to_dense()
         # vars_in_const = torch.eq(vars_in_const, torch.ones_like(vars_in_const)).float()
