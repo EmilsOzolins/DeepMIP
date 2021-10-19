@@ -143,6 +143,7 @@ class MIPInstance:
     def variable_relaxed_solution(self, var_id, value):
         self._relaxed_variables.append(var_id)
         self._relaxed_variables_values.append(value)
+        return self
 
     def drop_random_constraints(self):
         # randomly select indices for constraints to drop

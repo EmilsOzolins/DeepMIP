@@ -46,14 +46,18 @@ class BoundedKnapsackDataset(MIPDataset, IterableDataset):
                 min_weight = min(weights)
                 capacity = random.randint(min_weight, max_weight)
 
-                relaxed_int = self.relaxed_solutions(var_indices, weights, values, capacity)
+                relaxed_int, relaxed_solution = self.relaxed_solutions(var_indices, weights, values, capacity)
                 solution = self.get_optimal_value(weights, values, [capacity])
 
                 if relaxed_int == solution:
                     # Don't include solutions that can be obtained from LP by rounding variables
                     continue
 
-                yield {"mip": self.convert_to_mip(var_indices, weights, values, copies, capacity),
+                ip = self.convert_to_mip(var_indices, weights, values, copies, capacity)
+                for v_id, relax_val in zip(var_indices, relaxed_solution):
+                    ip.variable_relaxed_solution(v_id, relax_val)
+
+                yield {"mip": ip,
                        "optimal_solution": torch.as_tensor([solution], dtype=torch.float32)}
 
         return generator()
@@ -70,13 +74,13 @@ class BoundedKnapsackDataset(MIPDataset, IterableDataset):
         solution_vars = [v.solution_value() for v in variables]
         rounded_solutions = [round(s) for s in solution_vars]
 
-        return -sum([s * v for s, v in zip(rounded_solutions, values)])
+        return -sum([s * v for s, v in zip(rounded_solutions, values)]), [float(s) for s in solution_vars]
 
     @abstractmethod
     def get_optimal_value(self, weights, values, capacities):
         pass
 
-    def convert_to_mip(self, var_indices, weights, values, copies, capacity):
+    def convert_to_mip(self, var_indices, weights, values, copies, capacity) -> MIPInstance:
         ip = MIPInstance(len(var_indices))
 
         # Each element is available c times
