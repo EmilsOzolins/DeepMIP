@@ -343,7 +343,7 @@ def sparse_func(vars_obj_graph, func):
                                         func(vars_obj_graph.values()),
                                         size=vars_obj_graph.size(),
                                         device=vars_obj_graph.device)
-    return abs_graph
+    return abs_graph.coalesce()
 
 
 def make_sparse_unit(vars_obj_graph):
@@ -368,15 +368,13 @@ def sparse_dense_mul(s, d):
     return torch.sparse.FloatTensor(i, v * dv, s.size())
 
 
-def sparse_dense_mul_dim0(s, d):
+def sparse_dense_mul_1d(s, d, dim):
     i = s._indices()
     v = s._values()
-    dv = d[i[0, :]]  # get values from relevant entries of dense matrix
+    dv = d[i[dim, :]]  # get values from relevant entries of dense matrix
     return torch.sparse.FloatTensor(i, v * dv, s.size())
 
-
-def sparse_dense_mul_dim1(s, d):
-    i = s._indices()
-    v = s._values()
-    dv = d[i[1, :]]  # get values from relevant entries of dense matrix
-    return torch.sparse.FloatTensor(i, v * dv, s.size())
+def sparse_mean(graph, dim):
+    sum = torch.sparse.sum(graph, dim=dim).to_dense()
+    counts = torch.sparse.sum(make_sparse_unit(graph), dim=dim).to_dense()
+    return sum / torch.clamp(counts, min=1.)

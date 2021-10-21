@@ -4,7 +4,7 @@ import torch.nn as nn
 
 import hyperparams as params
 from model.normalization import PairNorm
-from utils.data_utils import sparse_func, InputDataHolder, sparse_dense_mul_dim1
+from utils.data_utils import sparse_func, InputDataHolder, sparse_dense_mul_1d
 
 
 def sample_triangular(shape):
@@ -13,7 +13,7 @@ def sample_triangular(shape):
     return sample1 + sample2
 
 
-def sample_logistic(shape, eps=1e-4):
+def sample_logistic(shape, eps=1e-5):
     minval = eps
     maxval = 1 - eps
     sample = (minval - maxval) * torch.rand(shape).cuda() + maxval
@@ -119,7 +119,7 @@ class MIPNetwork(torch.nn.Module):
         vars_scaler = torch.unsqueeze(torch.sqrt(vars_scaler), dim=-1)
 
         if self.use_preconditioning:
-            abs_graph1 = sparse_dense_mul_dim1(abs_graph, 1.0 / const_scaler_1d)
+            abs_graph1 = sparse_dense_mul_1d(abs_graph, 1.0 / const_scaler_1d, dim=1)
             vars_regul = torch.sparse.sum(abs_graph1, dim=-1).to_dense() + 1e-6
             vars_regul = torch.unsqueeze(torch.sqrt(vars_regul), dim=-1)
             # divs = obj_multipliers*np.sqrt(var_count)/vars_regul
@@ -151,8 +151,8 @@ class MIPNetwork(torch.nn.Module):
             const2var_msg_pos = torch.sparse.mm(unit_graph_pos, constr_features) / vars_scaler
             const2var_msg_neg = torch.sparse.mm(unit_graph_neg, constr_features) / vars_scaler
 
-            eq_lhs = torch.sparse.mm(batch_holder.vars_eq_const_graph.t(), query) / eq_const_scaler
-            eq_loss = torch.square(eq_const_values - eq_lhs)
+            eq_lhs = torch.sparse.mm(batch_holder.vars_eq_const_graph.t(), query)
+            eq_loss = torch.square((eq_const_values - eq_lhs) / eq_const_scaler)
             eq_const_msg = torch.cat([eq_constraints, eq_loss], dim=-1)
             eq_const_tmp = self.eq_constraint_update(eq_const_msg)
 
@@ -165,11 +165,16 @@ class MIPNetwork(torch.nn.Module):
             out_vars = self.output(variables)
             if self.use_preconditioning:
                 out_vars = out_vars * logit_scalers + out_vars.detach() * (1 - logit_scalers)
-            int_noise = self.noise.sample(out_vars.size()).cuda()
+            #int_noise = self.noise.sample(out_vars.size()).cuda()
+            int_noise = sample_logistic(out_vars.size())
+            #int_noise = torch.sign(out_vars)*torch.abs(int_noise)
+            #mul_noise = torch.exp(self.noise.sample([1]).cuda()*0.2)
+            #mul_noise = torch.abs(self.noise.sample(out_vars.size()).cuda() * 0.5)
 
             # Noise is not applied to variables that doesn't have integer constraint
             if self.training:
-                out_vars += 1.5 * int_noise * int_mask
+                #out_vars = (out_vars*mul_noise + 1*int_noise) * int_mask + out_vars*(1-int_mask)
+                out_vars = out_vars + 1 * int_noise * int_mask
 
             out = torch.sigmoid(out_vars) * int_mask + out_vars * (1 - int_mask) * self.continuous_var_scale
             outputs.append(out)
@@ -188,6 +193,7 @@ class MIPNetwork(torch.nn.Module):
             # self.summary.add_histogram("constraints_data", constraints, self.global_step)
             # self.summary.add_histogram("const_scaler", const_scaler, self.global_step)
             # self.summary.add_histogram("vars_scaler", vars_scaler, self.global_step)
+            #self.summary.add_histogram("mul_noise", mul_noise, self.global_step)
             if self.use_preconditioning: self.summary.add_histogram("logit_scaler", logit_scalers, self.global_step)
             # self.summary.add_histogram("divs", divs, self.global_step)
 
