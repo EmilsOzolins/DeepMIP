@@ -11,7 +11,6 @@ from torch.utils.tensorboard import SummaryWriter
 import config
 import hyperparams as params
 from data.kanapsack import BinaryKnapsackDataset
-from data.lp_dataset import LPDataset
 from metrics.discrete_metrics import DiscretizationMetrics
 from metrics.general_metrics import AverageMetrics, MetricsHandler
 from model.mip_network import MIPNetwork

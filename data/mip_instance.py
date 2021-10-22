@@ -31,7 +31,10 @@ class MIPInstance:
         self._drop_percentage = 0.05
         self._fix_percentage = 0.05
         self._augment_steps = 1
+
         self._presolved_obj_value = float('nan')
+        self._presolved_solution = []
+        self._presolved_solution_values = []
 
         self._relaxed_variables = []
         self._relaxed_variables_values = []
@@ -242,6 +245,12 @@ class MIPInstance:
 
         return self
 
+    def optimal_solution_vars(self, var_indices, solution_vars):
+        self._presolved_solution += var_indices
+        self._presolved_solution_values += solution_vars
+
+        return self
+
     @property
     def variables_constraints_graph(self):
         i = [x for x, _ in self._indices]
@@ -353,4 +362,11 @@ class MIPInstance:
     def relaxed_solution(self):
         """ Returns variable values of relaxed-LP solution"""
         vals = {var: sol for var, sol in zip(self._relaxed_variables, self._relaxed_variables_values)}
-        return torch.as_tensor([vals[x] if x in vals else 1 for x in range(self.next_variable_index)], dtype=torch.float32)
+        return torch.as_tensor([vals[x] if x in vals else 1 for x in range(self.next_variable_index)],
+                               dtype=torch.float32)
+
+    @property
+    def precomputed_solution_vars(self):
+        vals = {var: sol for var, sol in zip(self._presolved_solution, self._presolved_solution_values)}
+        return torch.as_tensor([vals[x] if x in vals else 1 for x in range(self.next_variable_index)],
+                               dtype=torch.float32)

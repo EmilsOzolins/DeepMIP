@@ -72,7 +72,6 @@ class MIPNetwork(torch.nn.Module):
         self.step = 0
 
     def forward(self, batch_holder: InputDataHolder, device):
-        # TODO: Experiment with disentangled architecture
         var_count, const_count = batch_holder.vars_const_graph.size()
         _, eq_const_count = batch_holder.vars_eq_const_graph.size()
         _, objective_count = batch_holder.vars_inst_graph.size()
@@ -106,7 +105,7 @@ class MIPNetwork(torch.nn.Module):
         const_scaler_1d = torch.sqrt(const_scaler)
         const_scaler = torch.unsqueeze(const_scaler_1d, dim=-1)
 
-        if batch_holder.vars_eq_const_graph._nnz()>0:
+        if batch_holder.vars_eq_const_graph._nnz() > 0:
             abs_graph_eq = sparse_func(batch_holder.vars_eq_const_graph, torch.square)
             eq_const_scaler = torch.sparse.sum(abs_graph_eq, dim=0).to_dense() + 1e-6
             eq_const_scaler_1d = torch.sqrt(eq_const_scaler)

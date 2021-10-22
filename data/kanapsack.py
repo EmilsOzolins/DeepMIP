@@ -1,4 +1,5 @@
 import random
+import warnings
 from abc import abstractmethod
 from typing import Iterator, Dict, List
 
@@ -28,6 +29,7 @@ class BoundedKnapsackDataset(MIPDataset, IterableDataset):
         self._max_values = max_values
         self._metrics_knapsack = None
         self._average_metrics = None
+        self._skipped_instances = 0
 
     def __iter__(self) -> Iterator[Dict]:
         def generator():
@@ -47,15 +49,23 @@ class BoundedKnapsackDataset(MIPDataset, IterableDataset):
                 capacity = random.randint(min_weight, max_weight)
 
                 relaxed_int, relaxed_solution = self.relaxed_solutions(var_indices, weights, values, capacity)
-                solution = self.get_optimal_value(weights, values, [capacity])
+                solution, solution_vars = self.get_optimal_value(weights, values, [capacity])
 
                 if relaxed_int == solution:
                     # Don't include solutions that can be obtained from LP by rounding variables
+                    self._skipped_instances += 1
+                    if self._skipped_instances % 100 == 0:
+                        warnings.warn(
+                            f"Instances seems to be too easy, {self._skipped_instances} consecutive examples skipped.")
                     continue
+
+                self._skipped_instances = 0
 
                 ip = self.convert_to_mip(var_indices, weights, values, copies, capacity)
                 for v_id, relax_val in zip(var_indices, relaxed_solution):
                     ip.variable_relaxed_solution(v_id, relax_val)
+
+                ip.optimal_solution_vars(var_indices, solution_vars)
 
                 yield {"mip": ip,
                        "optimal_solution": torch.as_tensor([solution], dtype=torch.float32)}
@@ -126,7 +136,10 @@ class BinaryKnapsackDataset(BoundedKnapsackDataset):
             pywrapknapsack_solver.KnapsackSolver.KNAPSACK_BRUTE_FORCE_SOLVER, 'KnapsackExample')
 
         solver.Init(values, [weights], capacities)
-        return -solver.Solve()
+        solution = -solver.Solve()
+        solution_vars = [1 if solver.BestSolutionContains(idx) else 0 for idx in range(len(weights))]
+
+        return solution, solution_vars
 
     def convert_to_mip(self, var_indices, weights, values, copies, capacity):
         ip = MIPInstance(len(var_indices))

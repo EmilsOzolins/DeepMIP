@@ -68,6 +68,8 @@ def batch_as_mip(mip_instances: Tuple[MIPInstance]) -> Dict[str, Tuple]:
     integer_variables = []
     relaxed_solution = []
 
+    optimal_solution = []
+
     for graph_id, mip in enumerate(mip_instances):
         ind = mip.variables_constraints_graph
         ind[0, :] += var_offset
@@ -126,6 +128,9 @@ def batch_as_mip(mip_instances: Tuple[MIPInstance]) -> Dict[str, Tuple]:
         relaxed = mip.relaxed_solution
         relaxed_solution.append(relaxed)
 
+        sols = mip.precomputed_solution_vars
+        optimal_solution.append(sols)
+
         var_offset += mip.next_variable_index
         const_offset += mip.next_constraint_index
         eq_const_offset += mip.next_equal_constraint_index
@@ -160,6 +165,8 @@ def batch_as_mip(mip_instances: Tuple[MIPInstance]) -> Dict[str, Tuple]:
     integer_variables = torch.cat(integer_variables, dim=-1)
     relaxed_solution = torch.cat(relaxed_solution, dim=-1)
 
+    optimal_solution = torch.cat(optimal_solution, dim=-1)
+
     return {"constraints": constraints,
             "eq_constraints": eq_constraints,
             "objective": objective,
@@ -167,7 +174,8 @@ def batch_as_mip(mip_instances: Tuple[MIPInstance]) -> Dict[str, Tuple]:
             "eq_consts_per_graph": eq_consts_per_graph,
             "vars_per_graph": vars_per_graph,
             "integer_variables": integer_variables,
-            "relaxed_solution": relaxed_solution}
+            "relaxed_solution": relaxed_solution,
+            "solution_values": optimal_solution}
 
 
 def batch_as_tensor(batch_data: Tuple[Tensor]):
@@ -293,6 +301,10 @@ class MIPBatchHolder(InputDataHolder):
     @cached_property
     def optimal_solution(self):
         return self._batched_data['optimal_solution'].to(device=self._device)
+
+    @cached_property
+    def precomputed_solution_vars(self):
+        return self._batched_data["mip"]["solution_values"].to(device=self._device)
 
     @cached_property
     def integer_mask(self):
