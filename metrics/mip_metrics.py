@@ -25,7 +25,7 @@ class MIPMetrics(StackableMetrics):
         mean_violation = self._max_constraints(prediction, vars_const_graph, const_values, aggregation_func=torch.mean)
         fully_sat_mips = self._mask_satisfied_instances(const_inst_graph, const_values, prediction, vars_const_graph)
 
-        if vars_eq_const_graph._nnz()>0:
+        if vars_eq_const_graph._nnz() > 0:
             max_eq_violation = self._max_eq_constraints(prediction, vars_eq_const_graph, eq_const_values)
             mean_eq_violation = self._max_constraints(prediction, vars_eq_const_graph, eq_const_values, aggregation_func=torch.mean)
             fully_sat_eq_mips = self._mask_satisfied_eq_instances(eq_const_inst_graph, eq_const_values, prediction, vars_eq_const_graph)
@@ -57,8 +57,11 @@ class MIPMetrics(StackableMetrics):
             fully_solved=fully_solved,
             max_violation=max_violation,
             mean_violation=mean_violation,
-            max_eq_violation = max_eq_violation,
-            mean_eq_violation = mean_eq_violation
+            max_eq_violation=max_eq_violation,
+            mean_eq_violation=mean_eq_violation,
+            mean_optimal_solution=torch.mean(batch_holder.optimal_solution),
+            mean_found_solution=torch.sparse.mm(batch_holder.vars_obj_graph.t(),
+                                                torch.unsqueeze(prediction, dim=-1)).mean()
         )
 
     @property
@@ -114,7 +117,7 @@ class MIPMetrics(StackableMetrics):
 
     def _max_eq_constraints(self, prediction, vars_const_graph, const_values, aggregation_func=torch.max):
         sat_const = self._max_eq_constraint_violation(const_values, prediction, vars_const_graph,
-                                                   aggregation_func=aggregation_func)
+                                                      aggregation_func=aggregation_func)
         return sat_const
 
     @staticmethod
@@ -186,10 +189,12 @@ class MIPMetrics_train(MIPMetrics):
         mean_violation = self._max_constraints(logits, vars_const_graph, const_values, aggregation_func=torch.mean)
         fully_sat_mips = self._mask_satisfied_instances(const_inst_graph, const_values, logits, vars_const_graph)
 
-        if vars_eq_const_graph._nnz()>0:
+        if vars_eq_const_graph._nnz() > 0:
             max_eq_violation = self._max_eq_constraints(logits, vars_eq_const_graph, eq_const_values)
-            mean_eq_violation = self._max_constraints(logits, vars_eq_const_graph, eq_const_values, aggregation_func=torch.mean)
-            fully_sat_eq_mips = self._mask_satisfied_eq_instances(eq_const_inst_graph, eq_const_values, prediction, vars_eq_const_graph)
+            mean_eq_violation = self._max_constraints(logits, vars_eq_const_graph, eq_const_values,
+                                                      aggregation_func=torch.mean)
+            fully_sat_eq_mips = self._mask_satisfied_eq_instances(eq_const_inst_graph, eq_const_values, prediction,
+                                                                  vars_eq_const_graph)
         else:
             max_eq_violation = torch.tensor(0.)
             mean_eq_violation = torch.tensor(0.)
@@ -207,6 +212,6 @@ class MIPMetrics_train(MIPMetrics):
             fully_satisfied_instances=fully_sat_mips,
             max_violation=max_violation,
             mean_violation=mean_violation,
-            max_eq_violation = max_eq_violation,
-            mean_eq_violation = mean_eq_violation
+            max_eq_violation=max_eq_violation,
+            mean_eq_violation=mean_eq_violation
         )

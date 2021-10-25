@@ -11,6 +11,7 @@ from torch.utils.tensorboard import SummaryWriter
 import config
 import hyperparams as params
 from data.kanapsack import BinaryKnapsackDataset
+from data.lp_knapsack import LPKnapsackDataset
 from metrics.discrete_metrics import DiscretizationMetrics
 from metrics.general_metrics import AverageMetrics, MetricsHandler
 from model.mip_network import MIPNetwork
@@ -43,9 +44,9 @@ def main():
     # train_dataset = IntegerSudokuDataset(sudoku_train_data)
     # val_dataset = IntegerSudokuDataset(sudoku_val_data)
     #
-    test_dataset = BinaryKnapsackDataset(2, 20)
-    train_dataset = BinaryKnapsackDataset(2, 20)
-    val_dataset = BinaryKnapsackDataset(2, 20)
+    test_dataset = LPKnapsackDataset(2, 20)
+    train_dataset = LPKnapsackDataset(2, 20)
+    val_dataset = LPKnapsackDataset(2, 20)
     #
     # test_dataset = ConstrainedBinaryKnapsackDataset(2, 20)
     # train_dataset = ConstrainedBinaryKnapsackDataset(2, 20)
