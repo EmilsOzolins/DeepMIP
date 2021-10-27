@@ -53,7 +53,7 @@ class LPKnapsackDataset(MIPDataset, IterableDataset):
 
     def relaxed_solutions(self, var_indices, weights, values, capacity):
         solver = pywraplp.Solver.CreateSolver('GLOP')
-        variables = [solver.NumVar(0, self._max_copies, str(i)) for i in var_indices]
+        variables = [solver.NumVar(0, solver.infinity(), str(i)) for i in var_indices]
 
         left_side = sum([w * v for w, v in zip(weights, variables)])
         solver.Add(left_side <= capacity)
@@ -72,6 +72,9 @@ class LPKnapsackDataset(MIPDataset, IterableDataset):
         # Weight less or equal with the knapsack capacity
         ip = ip.less_or_equal(var_indices, weights, capacity)
         ip = ip.maximize_objective(var_indices, values)
+
+        for vid in var_indices:
+            ip.variable_lower_bound(vid, 0)
 
         return ip
 

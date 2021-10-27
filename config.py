@@ -10,7 +10,7 @@ device = 'cuda:0'
 debugging_enabled = False
 
 # Caching
-prefill_cache = True
+prefill_cache = False
 cache_dir = "/tmp/cache"
 cache = diskcache.FanoutCache(cache_dir,
                               size_limit=int((2 ** 30) * 100),  # 100Gb

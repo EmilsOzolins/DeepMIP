@@ -6,7 +6,7 @@ def format_metrics(mode: str, step: int, metrics: dict, max_line_len=200):
 
     for key, value in metrics.items():
         if isinstance(value, float) or (isinstance(value, np.ndarray) and value.size == 1):
-            formatted_metrics.append(f"[{key}={value:.4f}]")
+            formatted_metrics.append(f"[{key}={value:.6f}]")
         elif isinstance(value, int):
             formatted_metrics.append(f"[{key}={value}]")
         else:

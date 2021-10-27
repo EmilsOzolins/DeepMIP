@@ -44,9 +44,9 @@ def main():
     # train_dataset = IntegerSudokuDataset(sudoku_train_data)
     # val_dataset = IntegerSudokuDataset(sudoku_val_data)
     #
-    test_dataset = LPKnapsackDataset(2, 20)
-    train_dataset = LPKnapsackDataset(2, 20)
-    val_dataset = LPKnapsackDataset(2, 20)
+    test_dataset = LPKnapsackDataset(2, 2)
+    train_dataset = LPKnapsackDataset(2, 2)
+    val_dataset = LPKnapsackDataset(2, 2)
     #
     # test_dataset = ConstrainedBinaryKnapsackDataset(2, 20)
     # train_dataset = ConstrainedBinaryKnapsackDataset(2, 20)
