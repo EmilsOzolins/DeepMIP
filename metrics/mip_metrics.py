@@ -75,7 +75,7 @@ class MIPMetrics(StackableMetrics):
     @staticmethod
     def _count_optimal_values(opt_values, prediction, vars_obj_graph):
         predicted_val = torch.sparse.mm(vars_obj_graph.t(), torch.unsqueeze(prediction, dim=-1))
-        found_optimum = torch.isclose(predicted_val, opt_values, atol=0.1)
+        found_optimum = torch.isclose(predicted_val, opt_values, atol=1e-4)
         return torch.squeeze(found_optimum)
 
     @staticmethod
