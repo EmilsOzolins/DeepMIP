@@ -110,6 +110,8 @@ class BinarySudokuDataset(IPSudokuDataset):
                     ip_inst = ip_inst.equal(variables, multipliers, 1)
                     ip_inst = ip_inst.integer_constraint(variables)
 
+        ip_inst = ip_inst.minimize_objective([x for x in range(9 ** 3)], [0] * (9 ** 3))
+
         return ip_inst
 
     @staticmethod
@@ -211,13 +213,14 @@ class IntegerSudokuDataset(IPSudokuDataset):
         return 4
 
     def decode_model_outputs(self, model_output, batch_holder: MIPBatchHolder):
-        powers = torch.tensor([2 ** k for k in range(self.required_output_bits)], dtype=torch.float32, device=model_output.device)
+        powers = torch.tensor([2 ** k for k in range(self.required_output_bits)], dtype=torch.float32,
+                              device=model_output.device)
         assignment = torch.reshape(model_output, [params.batch_size, 9, 9, self.required_output_bits])
         assignment = torch.round(assignment)
         return torch.sum(assignment * powers, dim=-1)
 
     @staticmethod
     def _calc_index(x, y) -> int:
-        """ Indexes 3D tensor as 1D array, indexing should matches PyTorch reshape operation.
+        """ Indexes 3D tensor as 1D array, indexing should match PyTorch reshape operation.
         """
         return 9 * x + y

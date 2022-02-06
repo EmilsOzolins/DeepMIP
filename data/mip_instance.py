@@ -286,12 +286,12 @@ class MIPInstance:
 
     @property
     def variables_equal_constraints_values(self):
-        """ Values of variables-eqality constraints graph"""
+        """ Values of variables-equality constraints graph"""
         return torch.as_tensor(self._equal_multipliers, dtype=torch.float32)
 
     @property
     def right_values_of_equal_constraints(self):
-        """ Right hand side values for equality constraints """
+        """ Right-hand side values for equality constraints """
         return torch.as_tensor(self._equal_rhs, dtype=torch.float32)
 
     @property

@@ -100,10 +100,18 @@ class MIPNetwork(torch.nn.Module):
         # denom = torch.sparse.sum(unit_graph, dim=0).to_dense()+1e-6
         # const_scaler = torch.unsqueeze(const_scaler/denom, dim=-1)
 
-        # TODO: Experiment with mean
-        const_scaler = torch.sparse.sum(abs_graph, dim=0).to_dense() + 1e-6
-        const_scaler_1d = torch.sqrt(const_scaler)
-        const_scaler = torch.unsqueeze(const_scaler_1d, dim=-1)
+        if batch_holder.vars_const_graph._nnz() > 0:
+            const_scaler = torch.sparse.sum(abs_graph, dim=0).to_dense() + 1e-6
+            const_scaler_1d = torch.sqrt(const_scaler)
+            const_scaler = torch.unsqueeze(const_scaler_1d, dim=-1)
+
+            # TODO: Experiment with mean
+            vars_scaler = torch.sparse.sum(abs_graph, dim=-1).to_dense() + 1e-6
+            vars_scaler = torch.unsqueeze(torch.sqrt(vars_scaler), dim=-1)
+        else:
+            const_scaler = 1
+            const_scaler_1d = 1
+            vars_scaler = 1
 
         if batch_holder.vars_eq_const_graph._nnz() > 0:
             abs_graph_eq = sparse_func(batch_holder.vars_eq_const_graph, torch.square)
@@ -112,10 +120,6 @@ class MIPNetwork(torch.nn.Module):
             eq_const_scaler = torch.unsqueeze(eq_const_scaler_1d, dim=-1)
         else:
             eq_const_scaler = 1
-
-        # TODO: Experiment with mean
-        vars_scaler = torch.sparse.sum(abs_graph, dim=-1).to_dense() + 1e-6
-        vars_scaler = torch.unsqueeze(torch.sqrt(vars_scaler), dim=-1)
 
         if self.use_preconditioning:
             abs_graph1 = sparse_dense_mul_1d(abs_graph, 1.0 / const_scaler_1d, dim=1)

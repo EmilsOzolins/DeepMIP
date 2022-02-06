@@ -8,14 +8,16 @@ import torch.sparse
 from torch.utils.data import DataLoader, IterableDataset
 from torch.utils.tensorboard import SummaryWriter
 
+from data.lp_dataset import LPDataset
 import config
 import hyperparams as params
 from data.kanapsack import BinaryKnapsackDataset
 from data.lp_knapsack import LPKnapsackDataset
+from data.sudoku import BinarySudokuDataset
 from metrics.discrete_metrics import DiscretizationMetrics
 from metrics.general_metrics import AverageMetrics, MetricsHandler
-from model.mip_network import MIPNetwork
 from optimizers.adam_clip import Adam_clip
+from model.mip_network import MIPNetwork
 from utils.data_utils import batch_data, MIPBatchHolder, sparse_func, make_sparse_unit
 from utils.visualize import format_metrics
 
@@ -36,17 +38,17 @@ def main():
     sudoku_train_data = "binary/sudoku_train.csv"
     sudoku_val_data = "binary/sudoku_validate.csv"
     #
-    # test_dataset = BinarySudokuDataset(sudoku_test_data)
-    # train_dataset = BinarySudokuDataset(sudoku_train_data)
-    # val_dataset = BinarySudokuDataset(sudoku_val_data)
+    test_dataset = BinarySudokuDataset(sudoku_test_data)
+    train_dataset = BinarySudokuDataset(sudoku_train_data)
+    val_dataset = BinarySudokuDataset(sudoku_val_data)
 
     # test_dataset = IntegerSudokuDataset(sudoku_test_data)
     # train_dataset = IntegerSudokuDataset(sudoku_train_data)
     # val_dataset = IntegerSudokuDataset(sudoku_val_data)
     #
-    test_dataset = LPKnapsackDataset(2, 2)
-    train_dataset = LPKnapsackDataset(2, 2)
-    val_dataset = LPKnapsackDataset(2, 2)
+    # test_dataset = BinaryKnapsackDataset(2, 20)
+    # train_dataset = BinaryKnapsackDataset(2, 20)
+    # val_dataset = BinaryKnapsackDataset(2, 20)
     #
     # test_dataset = ConstrainedBinaryKnapsackDataset(2, 20)
     # train_dataset = ConstrainedBinaryKnapsackDataset(2, 20)
@@ -256,12 +258,15 @@ def combined_loss(asn, batch_holder):
 def sum_loss_sumscaled(asn_list, batch_holder, eps=1e-3):
     sum_loss = 0.
 
-    abs_graph = sparse_func(batch_holder.vars_const_graph, torch.square)
-    scalers1 = torch.sqrt(torch.sparse.sum(abs_graph, dim=0).to_dense())
-    scalers1 = torch.unsqueeze(torch.clamp(scalers1, min=1e-3), dim=-1)
-    # unit_graph = make_sparse_unit(batch_holder.vars_const_graph)
-    # scalers2 = torch.unsqueeze(torch.sparse.sum(unit_graph, dim=0).to_dense(), dim=-1)
-    scalers1 = 1.0 / scalers1
+    if batch_holder.vars_const_graph._nnz() > 0:
+        abs_graph = sparse_func(batch_holder.vars_const_graph, torch.square)
+        scalers1 = torch.sqrt(torch.sparse.sum(abs_graph, dim=0).to_dense())
+        scalers1 = torch.unsqueeze(torch.clamp(scalers1, min=1e-3), dim=-1)
+        # unit_graph = make_sparse_unit(batch_holder.vars_const_graph)
+        # scalers2 = torch.unsqueeze(torch.sparse.sum(unit_graph, dim=0).to_dense(), dim=-1)
+        scalers1 = 1.0 / scalers1
+    else:
+        scalers1 = 1
 
     if batch_holder.vars_eq_const_graph._nnz() > 0:
         abs_graph = sparse_func(batch_holder.vars_eq_const_graph, torch.square)
@@ -287,13 +292,14 @@ def sum_loss_sumscaled(asn_list, batch_holder, eps=1e-3):
     if batch_holder.vars_eq_const_graph._nnz() > 0:
         eq_const_values = torch.unsqueeze(batch_holder.eq_const_values, dim=-1)
         eq_squared_coef_sum = torch.unsqueeze(torch.sparse.sum(batch_holder.vars_eq_const_graph ** 2, dim=0).to_dense(), dim=-1)
-        unit_var_eq_const_graph = make_sparse_unit(batch_holder.vars_const_graph)
+        unit_var_eq_const_graph = make_sparse_unit(batch_holder.vars_eq_const_graph)
         eq_coef_weight = torch.unsqueeze(torch.sparse.sum(unit_var_eq_const_graph, dim=1), dim=-1).to_dense()
 
-    const_values = torch.unsqueeze(batch_holder.const_values, dim=-1)
-    squared_coef_sum = torch.unsqueeze(torch.sparse.sum(batch_holder.vars_const_graph ** 2, dim=0).to_dense(), dim=-1)
-    unit_var_const_graph = make_sparse_unit(batch_holder.vars_const_graph)
-    coef_weight = torch.unsqueeze(torch.sparse.sum(unit_var_const_graph, dim=1), dim=-1).to_dense()
+    if batch_holder.vars_const_graph._nnz() > 0:
+        const_values = torch.unsqueeze(batch_holder.const_values, dim=-1)
+        squared_coef_sum = torch.unsqueeze(torch.sparse.sum(batch_holder.vars_const_graph ** 2, dim=0).to_dense(), dim=-1)
+        unit_var_const_graph = make_sparse_unit(batch_holder.vars_const_graph)
+        coef_weight = torch.unsqueeze(torch.sparse.sum(unit_var_const_graph, dim=1), dim=-1).to_dense()
 
     for asn in asn_list:
         # Calculate mean squared error for equality constraints
@@ -310,17 +316,20 @@ def sum_loss_sumscaled(asn_list, batch_holder, eps=1e-3):
             prediction = asn
 
         # Calculate loss for the rest of the constraints
-        left_side = torch.sparse.mm(batch_holder.vars_const_graph.t(), prediction)
-        loss_c = torch.relu(eps + (left_side - torch.unsqueeze(batch_holder.const_values, dim=-1)) * scalers1)
+        if batch_holder.vars_const_graph._nnz() > 0:
+            left_side = torch.sparse.mm(batch_holder.vars_const_graph.t(), prediction)
+            loss_c = torch.relu(eps + (left_side - torch.unsqueeze(batch_holder.const_values, dim=-1)) * scalers1)
 
-        loss_c = torch.square(loss_c)
-        loss_c = torch.sparse.mm(batch_holder.const_inst_graph.t(), loss_c)
-        # loss_c += torch.mean(bounds_loss_0) + torch.mean(bounds_loss_1)  # todo correct per graph loss
-        loss_c = torch.sqrt(loss_c + 1e-6) - np.sqrt(1e-6) + loss_c_eq
+            loss_c = torch.square(loss_c)
+            loss_c = torch.sparse.mm(batch_holder.const_inst_graph.t(), loss_c)
+            # loss_c += torch.mean(bounds_loss_0) + torch.mean(bounds_loss_1)  # todo correct per graph loss
+            loss_c = torch.sqrt(loss_c + 1e-6) - np.sqrt(1e-6) + loss_c_eq
 
-        dif = torch.relu(left_side - const_values) / squared_coef_sum
-        prediction_dif = torch.sparse.mm(batch_holder.vars_const_graph, dif)
-        prediction = prediction - prediction_dif / torch.maximum(coef_weight, torch.ones_like(prediction))
+            dif = torch.relu(left_side - const_values) / squared_coef_sum
+            prediction_dif = torch.sparse.mm(batch_holder.vars_const_graph, dif)
+            prediction = prediction - prediction_dif / torch.maximum(coef_weight, torch.ones_like(prediction))
+        else:
+            loss_c = loss_c_eq
 
         loss_o = torch.sparse.mm(batch_holder.vars_obj_graph.t(), prediction)
         loss_o_scaled = loss_o * scalers1_o
