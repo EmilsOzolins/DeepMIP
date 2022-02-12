@@ -15,10 +15,17 @@ from utils.data_utils import MIPBatchHolder
 
 class IPSudokuDataset(MIPDataset, Dataset, ABC):
 
-    def __init__(self, csv_file) -> None:
-        csv = pd.read_csv(csv_file, header=0)
-        self.features = csv["quizzes"]
-        self.labels = csv["solutions"]
+    def __init__(self, *csv_files) -> None:
+        features_df = []
+        labels_df = []
+
+        for csv_file in csv_files:
+            csv = pd.read_csv(csv_file, header=0)
+            features_df.append(csv["quizzes"])
+            labels_df.append(csv["solutions"])
+
+        self.features = pd.concat(features_df)
+        self.labels = pd.concat(labels_df)
         self._sudoku_metrics = SudokuMetrics()
 
     def __getitem__(self, index) -> Dict:
