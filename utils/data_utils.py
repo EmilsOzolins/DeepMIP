@@ -326,7 +326,6 @@ class MIPBatchHolder(InputDataHolder):
 
         return torch.sparse.sum(self.vars_obj_graph, dim=-1).to_dense()
 
-    @lru_cache(maxsize=None)
     def get_data(self, *keys: str):
         data = [self._batched_data[k] for k in keys]
         data = [x.to(device=self._device) if isinstance(x, torch.Tensor) else x for x in data]
