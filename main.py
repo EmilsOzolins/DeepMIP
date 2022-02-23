@@ -34,9 +34,12 @@ def main():
     # experiment.log_code(folder=str(Path().resolve()))
 
     # TODO: Move dataset selection to separate resolver and add flag in config
-    sudoku_test_data = "binary/sudoku_test.csv"
-    sudoku_train_data = "binary/sudoku_train.csv"
-    sudoku_val_data = "binary/sudoku_validate.csv"
+    # sudoku_test_data = "binary/sudoku_test.csv"
+    # sudoku_train_data = "binary/sudoku_train.csv"
+    # sudoku_val_data = "binary/sudoku_validate.csv"
+    sudoku_test_data = "binary/hard_sudoku_test.csv"
+    sudoku_train_data = "binary/hard_sudoku_train.csv"
+    sudoku_val_data = "binary/hard_sudoku_valid.csv"
     #
     test_dataset = BinarySudokuDataset(sudoku_test_data)
     train_dataset = BinarySudokuDataset(sudoku_train_data)
@@ -101,10 +104,14 @@ def main():
             current_step += train_steps
             print(format_metrics("train", current_step, {**disc_metric, **loss_res, "elapsed_time": elapsed_time}))
             # experiment.log_metrics({**disc_metric, **loss_res, "elapsed_time": elapsed_time})
+            sumgrad = 0
 
             for name, param in network.named_parameters():
+                sumgrad+=torch.sum(torch.abs(param.grad))
                 summary.add_histogram("grad/" + name, param.grad, current_step)
                 summary.add_histogram("params/" + name, param.data, current_step)
+
+            summary.add_scalar("sumgrad", sumgrad, current_step)
 
             for k, v in loss_res.items():
                 summary.add_scalar("loss/" + k, v, current_step)
@@ -175,8 +182,9 @@ def train(train_steps, network, optimizer, train_dataloader, dataset):
         prediction = dataset.decode_model_outputs(result, batch_holder)
         loss_avg.update(loss=loss, loss_opt=total_loss_o, loss_const=total_loss_c)
         metrics.update(prediction=prediction, batch_holder=batch_holder, logits=result)
-        summary.add_histogram("logits", logits, global_step)
-        summary.add_histogram("values", result, global_step)
+        if global_step % 100 == 0:
+            summary.add_histogram("logits", logits, global_step)
+            summary.add_histogram("values", result, global_step)
         global_step += 1
 
         #
@@ -307,7 +315,7 @@ def sum_loss_sumscaled(asn_list, batch_holder, eps=1e-3):
         loss_c_eq = torch.square(torch.unsqueeze(batch_holder.eq_const_values, dim=-1) - left_side_eq) * scalers1eq
         loss_c_eq = torch.sparse.mm(batch_holder.eq_const_inst_graph.t(), loss_c_eq)
 
-        # Normalize equality constraints with single variable
+        # Normalize equality constraints with single variable by approximate projection on the constraints
         if batch_holder.vars_eq_const_graph._nnz() > 0:
             dif = (left_side_eq - eq_const_values) / eq_squared_coef_sum
             prediction_dif = torch.sparse.mm(batch_holder.vars_eq_const_graph, dif)
@@ -323,13 +331,15 @@ def sum_loss_sumscaled(asn_list, batch_holder, eps=1e-3):
             loss_c = torch.square(loss_c)
             loss_c = torch.sparse.mm(batch_holder.const_inst_graph.t(), loss_c)
             # loss_c += torch.mean(bounds_loss_0) + torch.mean(bounds_loss_1)  # todo correct per graph loss
-            loss_c = torch.sqrt(loss_c + 1e-6) - np.sqrt(1e-6) + loss_c_eq
 
+            # approximate projection on constraints, maybe not needed
             dif = torch.relu(left_side - const_values) / squared_coef_sum
             prediction_dif = torch.sparse.mm(batch_holder.vars_const_graph, dif)
             prediction = prediction - prediction_dif / torch.maximum(coef_weight, torch.ones_like(prediction))
         else:
-            loss_c = loss_c_eq
+            loss_c = 0
+
+        loss_c = torch.sqrt(loss_c + loss_c_eq + 1e-6) - np.sqrt(1e-6)
 
         loss_o = torch.sparse.mm(batch_holder.vars_obj_graph.t(), prediction)
         loss_o_scaled = loss_o * scalers1_o
