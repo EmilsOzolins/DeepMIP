@@ -154,7 +154,7 @@ class BinaryKnapsackDataset(BoundedKnapsackDataset):
 class ConstrainedBinaryKnapsackDataset(BinaryKnapsackDataset):
 
     def __init__(self, min_variables, max_variables, max_weight=20, max_values=20) -> None:
-        self.suboptimality = 3.0
+        self.suboptimality = 0.1
         super().__init__(min_variables, max_variables, max_weight=max_weight, max_values=max_values)
 
     def __iter__(self) -> Iterator[Dict]:
@@ -171,7 +171,7 @@ class ConstrainedBinaryKnapsackDataset(BinaryKnapsackDataset):
                 capacity = random.randint(min_weight, max_weight)
 
                 relaxed_int = self.relaxed_solutions(var_indices, weights, values, capacity)
-                solution = self.get_optimal_value(weights, values, [capacity])
+                solution, solution_vars = self.get_optimal_value(weights, values, [capacity])
 
                 if relaxed_int == solution:
                     # Don't include solutions that can be obtained from LP by rounding variables
