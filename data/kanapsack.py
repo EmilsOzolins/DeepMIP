@@ -133,7 +133,7 @@ class BinaryKnapsackDataset(BoundedKnapsackDataset):
 
     def get_optimal_value(self, weights, values, capacities):
         solver = pywrapknapsack_solver.KnapsackSolver(
-            pywrapknapsack_solver.KnapsackSolver.KNAPSACK_BRUTE_FORCE_SOLVER, 'KnapsackExample')
+            pywrapknapsack_solver.KnapsackSolver.KNAPSACK_MULTIDIMENSION_BRANCH_AND_BOUND_SOLVER, 'KnapsackExample')
 
         solver.Init(values, [weights], capacities)
         solution = -solver.Solve()
@@ -170,25 +170,34 @@ class ConstrainedBinaryKnapsackDataset(BinaryKnapsackDataset):
                 min_weight = min(weights)
                 capacity = random.randint(min_weight, max_weight)
 
-                relaxed_int = self.relaxed_solutions(var_indices, weights, values, capacity)
+                relaxed_int, relaxed_solution_vars = self.relaxed_solutions(var_indices, weights, values, capacity)
                 solution, solution_vars = self.get_optimal_value(weights, values, [capacity])
+                solution = -solution
 
                 if relaxed_int == solution:
                     # Don't include solutions that can be obtained from LP by rounding variables
                     continue
 
-                yield {"mip": self.convert_to_mip_thr(var_indices, weights, values, copies, capacity,
-                                                      solution - self.suboptimality),
+                ip = self.convert_to_mip_thr(var_indices, weights, values, copies, capacity, solution - self.suboptimality)
+                ip.optimal_solution_vars(var_indices, solution_vars)
+
+                for v_id, relax_val in zip(var_indices, relaxed_solution_vars):
+                    ip.variable_relaxed_solution(v_id, relax_val)
+
+                yield {"mip": ip,
                        "optimal_solution": torch.as_tensor([0.], dtype=torch.float32)}
 
         return generator()
 
-    def convert_to_mip_thr(self, var_indices, weights, values, copies, capacity, objective_threshold):
+    @staticmethod
+    def convert_to_mip_thr(var_indices, weights, values, copies, capacity, objective_threshold):
         ip = MIPInstance(len(var_indices))
 
         ip = ip.less_or_equal(var_indices, weights, capacity)
         ip = ip.greater_or_equal(var_indices, values, objective_threshold)
         ip = ip.integer_constraint(var_indices)
+
+        ip = ip.minimize_objective(var_indices, [0] * len(var_indices))
 
         return ip
 

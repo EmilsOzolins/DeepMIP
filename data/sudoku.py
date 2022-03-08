@@ -3,6 +3,7 @@ from typing import Dict, List
 
 import pandas as pd
 import torch
+from ortools.linear_solver import pywraplp
 from torch.utils.data.dataset import Dataset
 
 import hyperparams as params
@@ -118,8 +119,64 @@ class BinarySudokuDataset(IPSudokuDataset):
                     ip_inst = ip_inst.integer_constraint(variables)
 
         ip_inst = ip_inst.minimize_objective([x for x in range(9 ** 3)], [0] * (9 ** 3))
+        for i, val in enumerate(self.relaxed_solutions(data)):
+            ip_inst.variable_relaxed_solution(i, val)
 
         return ip_inst
+
+    def relaxed_solutions(self, data):
+        solver = pywraplp.Solver.CreateSolver('GLOP')
+        variables = [solver.NumVar(0, 1, str(i)) for i in range(9 ** 3)]
+
+        # Only one variable should be set to 1 along the k-dimension
+        for i in range(9):
+            for j in range(9):
+                value = data[i + 9 * j]
+                if value != 0:  # Set this element to given value, rest should be 0 in this field
+                    solver.Add(variables[self._calc_index(i, j, value - 1)] == 1)
+                    should_be_zero = 0
+                    for k in range(9):
+                        if k != value - 1:
+                            should_be_zero += variables[self._calc_index(i, j, k)]
+                    solver.Add(should_be_zero == 0)
+                else:  # Only one element should be set to 1
+                    should_be_one = 0
+                    for k in range(9):
+                        if k != value - 1:
+                            should_be_one += variables[self._calc_index(i, j, k)]
+                    solver.Add(should_be_one == 1)
+
+        # All elements in single column should be different
+        for j in range(9):
+            for k in range(9):
+                var_sum = 0
+                for i in range(9):
+                    var_sum += variables[self._calc_index(i, j, k)]
+                solver.Add(var_sum == 1)
+
+        # All elements in single row should be different
+        for i in range(9):
+            for k in range(9):
+                var_sum = 0
+                for j in range(9):
+                    var_sum += variables[self._calc_index(i, j, k)]
+                solver.Add(var_sum == 1)
+
+        # All elements in each 3x3 sub-square should be different
+        for p in range(3):
+            for q in range(3):
+                for k in range(9):
+                    var_sum = 0
+                    for j in range(3 * p, 3 * (p + 1)):
+                        for i in range(3 * q, 3 * (q + 1)):
+                            var_sum += variables[self._calc_index(i, j, k)]
+                    solver.Add(var_sum == 1)
+
+        solver.Maximize(sum([v * 0 for v in variables]))
+
+        solver.Solve()
+        solution_vars = [float(v.solution_value()) for v in variables]
+        return solution_vars
 
     @staticmethod
     def _calc_index(x, y, z) -> int:
