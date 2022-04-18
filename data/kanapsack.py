@@ -133,7 +133,7 @@ class BinaryKnapsackDataset(BoundedKnapsackDataset):
 
     def get_optimal_value(self, weights, values, capacities):
         solver = pywrapknapsack_solver.KnapsackSolver(
-            pywrapknapsack_solver.KnapsackSolver.KNAPSACK_MULTIDIMENSION_BRANCH_AND_BOUND_SOLVER, 'KnapsackExample')
+            pywrapknapsack_solver.KnapsackSolver.KNAPSACK_BRUTE_FORCE_SOLVER, 'KnapsackExample')
 
         solver.Init(values, [weights], capacities)
         solution = -solver.Solve()
@@ -153,9 +153,10 @@ class BinaryKnapsackDataset(BoundedKnapsackDataset):
 
 class ConstrainedBinaryKnapsackDataset(BinaryKnapsackDataset):
 
-    def __init__(self, min_variables, max_variables, max_weight=20, max_values=20) -> None:
-        self.suboptimality = 0.1
+    def __init__(self, min_variables, max_variables, max_weight=20, max_values=20, test_dataset=False) -> None:
+        self.suboptimality = 0.0
         super().__init__(min_variables, max_variables, max_weight=max_weight, max_values=max_values)
+        self.test_dataset = test_dataset
 
     def __iter__(self) -> Iterator[Dict]:
         def generator():
@@ -172,13 +173,15 @@ class ConstrainedBinaryKnapsackDataset(BinaryKnapsackDataset):
 
                 relaxed_int, relaxed_solution_vars = self.relaxed_solutions(var_indices, weights, values, capacity)
                 solution, solution_vars = self.get_optimal_value(weights, values, [capacity])
-                solution = -solution
 
+                # print(solution, relaxed_int)
                 if relaxed_int == solution:
                     # Don't include solutions that can be obtained from LP by rounding variables
                     continue
 
-                ip = self.convert_to_mip_thr(var_indices, weights, values, copies, capacity, solution - self.suboptimality)
+                solution = -solution
+                ip = self.convert_to_mip_thr(var_indices, weights, values, copies, capacity,
+                                             solution - self.suboptimality)
                 ip.optimal_solution_vars(var_indices, solution_vars)
 
                 for v_id, relax_val in zip(var_indices, relaxed_solution_vars):
@@ -189,13 +192,16 @@ class ConstrainedBinaryKnapsackDataset(BinaryKnapsackDataset):
 
         return generator()
 
-    @staticmethod
-    def convert_to_mip_thr(var_indices, weights, values, copies, capacity, objective_threshold):
+    def convert_to_mip_thr(self, var_indices, weights, values, copies, capacity, objective_threshold):
         ip = MIPInstance(len(var_indices))
 
         ip = ip.less_or_equal(var_indices, weights, capacity)
         ip = ip.greater_or_equal(var_indices, values, objective_threshold)
         ip = ip.integer_constraint(var_indices)
+
+        # for x in var_indices:
+        #     ip = ip.variable_lower_bound(x, 0)
+        #     ip = ip.variable_upper_bound(x, 1)
 
         ip = ip.minimize_objective(var_indices, [0] * len(var_indices))
 

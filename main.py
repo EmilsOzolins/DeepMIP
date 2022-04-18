@@ -94,7 +94,7 @@ def main():
         network.load_state_dict(checkpoint['model_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         # current_step = checkpoint['step']
-
+    log_once = None
     while current_step < params.train_steps:
         # with experiment.train():
         network.train()
@@ -107,9 +107,14 @@ def main():
             sumgrad = 0
 
             for name, param in network.named_parameters():
-                sumgrad+=torch.sum(torch.abs(param.grad))
-                summary.add_histogram("grad/" + name, param.grad, current_step)
-                summary.add_histogram("params/" + name, param.data, current_step)
+                if param.grad != None:
+                    sumgrad += torch.sum(torch.abs(param.grad))
+                    summary.add_histogram("grad/" + name, param.grad, current_step)
+                    summary.add_histogram("params/" + name, param.data, current_step)
+                else:
+                    if log_once is None:
+                        print(f"WARNING: {name} has no gradient!")
+                        log_once = True
 
             summary.add_scalar("sumgrad", sumgrad, current_step)
 
@@ -299,13 +304,15 @@ def sum_loss_sumscaled(asn_list, batch_holder, eps=1e-3):
 
     if batch_holder.vars_eq_const_graph._nnz() > 0:
         eq_const_values = torch.unsqueeze(batch_holder.eq_const_values, dim=-1)
-        eq_squared_coef_sum = torch.unsqueeze(torch.sparse.sum(batch_holder.vars_eq_const_graph ** 2, dim=0).to_dense(), dim=-1)
+        eq_squared_coef_sum = torch.unsqueeze(torch.sparse.sum(batch_holder.vars_eq_const_graph ** 2, dim=0).to_dense(),
+                                              dim=-1)
         unit_var_eq_const_graph = make_sparse_unit(batch_holder.vars_eq_const_graph)
         eq_coef_weight = torch.unsqueeze(torch.sparse.sum(unit_var_eq_const_graph, dim=1), dim=-1).to_dense()
 
     if batch_holder.vars_const_graph._nnz() > 0:
         const_values = torch.unsqueeze(batch_holder.const_values, dim=-1)
-        squared_coef_sum = torch.unsqueeze(torch.sparse.sum(batch_holder.vars_const_graph ** 2, dim=0).to_dense(), dim=-1)
+        squared_coef_sum = torch.unsqueeze(torch.sparse.sum(batch_holder.vars_const_graph ** 2, dim=0).to_dense(),
+                                           dim=-1)
         unit_var_const_graph = make_sparse_unit(batch_holder.vars_const_graph)
         coef_weight = torch.unsqueeze(torch.sparse.sum(unit_var_const_graph, dim=1), dim=-1).to_dense()
 

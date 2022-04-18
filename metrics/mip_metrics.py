@@ -27,18 +27,29 @@ class MIPMetrics(StackableMetrics):
 
         if vars_eq_const_graph._nnz() > 0:
             max_eq_violation = self._max_eq_constraints(prediction, vars_eq_const_graph, eq_const_values)
-            mean_eq_violation = self._max_constraints(prediction, vars_eq_const_graph, eq_const_values, aggregation_func=torch.mean)
-            fully_sat_eq_mips = self._mask_satisfied_eq_instances(eq_const_inst_graph, eq_const_values, prediction, vars_eq_const_graph)
+            mean_eq_violation = self._max_constraints(prediction, vars_eq_const_graph, eq_const_values,
+                                                      aggregation_func=torch.mean)
+            fully_sat_eq_mips = self._mask_satisfied_eq_instances(eq_const_inst_graph, eq_const_values, prediction,
+                                                                  vars_eq_const_graph)
         else:
             max_eq_violation = torch.tensor(0.)
             mean_eq_violation = torch.tensor(0.)
             fully_sat_eq_mips = torch.ones_like(fully_sat_mips)
 
         fully_sat_mips_inst = torch.logical_and(fully_sat_mips, fully_sat_eq_mips)
-        fully_sat_mips = torch.mean(fully_sat_mips_inst.float())
 
         vars_obj_graph = batch_holder.vars_obj_graph
         opt_value = batch_holder.optimal_solution
+
+        less_than = torch.less_equal(prediction, torch.ones_like(prediction, device=prediction.device))
+        more_than = torch.greater_equal(prediction, torch.zeros_like(prediction, device=prediction.device))
+
+        in_range = torch.logical_and(more_than, less_than).float()
+        in_range = torch.sparse.mm(batch_holder.vars_inst_graph.t(), torch.unsqueeze(in_range, dim=-1))
+        in_range = torch.greater_equal(in_range, torch.ones_like(in_range, device=in_range.device))
+
+        fully_sat_mips_inst = torch.logical_and(fully_sat_mips_inst, in_range)
+        fully_sat_mips = torch.mean(fully_sat_mips_inst.float())
 
         mean_optimality_gap = self._mean_optimality_gap(vars_obj_graph, opt_value, prediction)
         max_optimality_gap = self._max_optimality_gap(vars_obj_graph, opt_value, prediction)
@@ -48,6 +59,7 @@ class MIPMetrics(StackableMetrics):
         fully_solved = torch.mean(fully_solved.float())
 
         self._avg.update(
+            in_range=torch.mean(in_range.float()),
             satisfied_constraints=sat_const,
             satisfied_eq_constraints=sat_eq_const,
             fully_satisfied_instances=fully_sat_mips,

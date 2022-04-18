@@ -13,6 +13,12 @@ class MIPInstance:
 
     def __init__(self, variable_count=None) -> None:
         self._indices = []
+        self._constraint_edge_indices = []
+        self._variable_edge_indices = []
+        self._eq_constraint_edge_indices = []
+        self._eq_variable_edge_indices = []
+        self._current_edge_index = 0
+        self._current_eq_edge_index = 0
         self._multipliers = []
         self._right_side_values = []
         self._current_constraint_index = 0
@@ -71,8 +77,11 @@ class MIPInstance:
         self._max_var_index = max(max(variable_indices), self._max_var_index)
 
         for idx, a in zip(variable_indices, variable_multipliers):
+            self._variable_edge_indices.append((idx, self._current_edge_index))
+            self._constraint_edge_indices.append((self._current_constraint_index, self._current_edge_index))
             self._indices.append((idx, self._current_constraint_index))
             self._multipliers.append(a)
+            self._current_edge_index += 1
 
         self._right_side_values.append(right_side_value)
 
@@ -98,8 +107,13 @@ class MIPInstance:
             self._equal_indices.append((idx, self._current_equal_constraint_index))
             self._equal_multipliers.append(a)
 
-        self._equal_rhs.append(right_side_value)
+            self._eq_variable_edge_indices.append((idx, self._current_eq_edge_index))
+            self._eq_constraint_edge_indices.append((self._current_equal_constraint_index, self._current_eq_edge_index))
 
+            # Increase the edge index
+            self._current_eq_edge_index += 1
+
+        self._equal_rhs.append(right_side_value)
         # Increase the constraint index
         self._current_equal_constraint_index += 1
 
@@ -274,6 +288,14 @@ class MIPInstance:
         return self._current_constraint_index
 
     @property
+    def next_edge_index(self):
+        return self._current_edge_index
+
+    @property
+    def eq_next_edge_index(self):
+        return self._current_eq_edge_index
+
+    @property
     def variables_constraints_graph_size(self):
         return self.next_variable_index, self.next_constraint_index
 
@@ -283,6 +305,50 @@ class MIPInstance:
         i = [x for x, _ in self._equal_indices]
         j = [x for _, x in self._equal_indices]
         return torch.as_tensor([i, j])
+
+    @property
+    def variables_edge_graph(self):
+        """ Variables-equality constraints graph as list of indices in adjacency graph"""
+        i = [x for x, _ in self._variable_edge_indices]
+        j = [x for _, x in self._variable_edge_indices]
+        return torch.as_tensor([i, j])
+
+    @property
+    def variables_edge_graph_size(self):
+        return self.next_variable_index, self._current_edge_index
+
+    @property
+    def constraints_edge_graph(self):
+        """ Variables-equality constraints graph as list of indices in adjacency graph"""
+        i = [x for x, _ in self._constraint_edge_indices]
+        j = [x for _, x in self._constraint_edge_indices]
+        return torch.as_tensor([i, j])
+
+    @property
+    def constraint_edge_graph_size(self):
+        return self.next_constraint_index, self._current_edge_index
+
+    @property
+    def eq_variables_edge_graph(self):
+        """ Variables-equality constraints graph as list of indices in adjacency graph"""
+        i = [x for x, _ in self._eq_variable_edge_indices]
+        j = [x for _, x in self._eq_variable_edge_indices]
+        return torch.as_tensor([i, j])
+
+    @property
+    def eq_variables_edge_graph_size(self):
+        return self.next_variable_index, self._current_eq_edge_index
+
+    @property
+    def eq_constraints_edge_graph(self):
+        """ Variables-equality constraints graph as list of indices in adjacency graph"""
+        i = [x for x, _ in self._eq_constraint_edge_indices]
+        j = [x for _, x in self._eq_constraint_edge_indices]
+        return torch.as_tensor([i, j])
+
+    @property
+    def eq_constraint_edge_graph_size(self):
+        return self.next_equal_constraint_index, self._current_eq_edge_index
 
     @property
     def variables_equal_constraints_values(self):

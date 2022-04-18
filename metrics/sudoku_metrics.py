@@ -31,7 +31,7 @@ class SudokuMetrics(StackableMetrics):
         return self._avg.numpy_result
 
     @staticmethod
-    def _rows_accuracy(inputs):
+    def _rows_accuracy(inputs: torch.Tensor):
         """
          Expect 3D tensor with dimensions [batch_size, 9, 9] with integer values
         """

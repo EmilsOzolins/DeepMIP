@@ -33,21 +33,28 @@ class MIPNetwork(torch.nn.Module):
         self.continuous_var_scale = 0.1
 
         self.constraint_update = nn.Sequential(
-            nn.Linear(self.feature_maps * 2, self.feature_maps),
+            nn.Linear(self.feature_maps * 2 + 1, self.feature_maps),
             PairNorm(subtract_mean=False),
             nn.ReLU(),
             nn.Linear(self.feature_maps, self.feature_maps * 2),
         )
 
         self.eq_constraint_update = nn.Sequential(
-            nn.Linear(self.feature_maps * 2, self.feature_maps),
+            nn.Linear(self.feature_maps * 2 + 1, self.feature_maps),
             PairNorm(subtract_mean=False),
             nn.ReLU(),
             nn.Linear(self.feature_maps, self.feature_maps * 2),
         )
 
         self.make_query = nn.Sequential(
-            nn.Linear(self.feature_maps + 4, self.feature_maps),
+            nn.Linear(self.feature_maps, self.feature_maps),
+            PairNorm(subtract_mean=False),
+            nn.ReLU(),
+            nn.Linear(self.feature_maps, self.feature_maps),
+        )
+
+        self.make_query_2 = nn.Sequential(
+            nn.Linear(self.feature_maps, self.feature_maps),
             PairNorm(subtract_mean=False),
             nn.ReLU(),
             nn.Linear(self.feature_maps, self.feature_maps),
@@ -80,9 +87,9 @@ class MIPNetwork(torch.nn.Module):
         eq_const_values = torch.unsqueeze(batch_holder.eq_const_values, dim=-1)
         relaxed_solution = torch.unsqueeze(batch_holder.relaxed_solution, dim=-1)
 
-        variables = torch.ones([var_count, self.feature_maps], device=device) * relaxed_solution
-        constraints = torch.sparse.mm(batch_holder.vars_const_graph.t(), variables)
-        eq_constraints = torch.sparse.mm(batch_holder.vars_eq_const_graph.t(), variables)
+        variables = torch.ones([var_count, self.feature_maps], device=device)
+        constraints = torch.ones([const_count, self.feature_maps], device=device)
+        eq_constraints = torch.ones([eq_const_count, self.feature_maps], device=device)
 
         outputs = []
 
@@ -132,21 +139,25 @@ class MIPNetwork(torch.nn.Module):
         int_mask = torch.unsqueeze(batch_holder.integer_mask, dim=-1)
 
         for i in range(self.pass_steps):
-            with torch.enable_grad():
-                var_noisy = torch.cat([variables, self.noise.sample([var_count, 4]).cuda()], dim=-1)
-                query = self.make_query(var_noisy)
-                query = (query + 0.5) * int_mask + query * (1 - int_mask)
 
-                left_side_value = torch.sparse.mm(batch_holder.vars_const_graph.t(), query)
-                left_side_value = (left_side_value - const_values) / const_scaler
-                const_loss = left_side_value
-                # const_loss1 = torch.relu(left_side_value)
+            # with torch.enable_grad():
+            #     var_noisy = torch.cat([variables, self.noise.sample([var_count, 4]).cuda()], dim=-1)
+            #     query = self.make_query(var_noisy)
+            #     query = (query + 0.5) * int_mask + query * (1 - int_mask)
+            #
+            #     left_side_value = torch.sparse.mm(batch_holder.vars_const_graph.t(), query)
+            #     left_side_value = (left_side_value - const_values) / const_scaler
+            #     const_loss = left_side_value
+            # const_loss1 = torch.relu(left_side_value)
 
-                # obj_loss = query * obj_multipliers
-                # const_gradient = torch.autograd.grad([const_loss1.sum()], [query], retain_graph=True)[0]
-                # const_gradient1 = torch.autograd.grad([const_loss1.sum()], [query], retain_graph=True)[0]
+            # obj_loss = query * obj_multipliers
+            # const_gradient = torch.autograd.grad([const_loss1.sum()], [query], retain_graph=True)[0]
+            # const_gradient1 = torch.autograd.grad([const_loss1.sum()], [query], retain_graph=True)[0]
 
-            const_msg = torch.cat([constraints, const_loss], dim=-1)
+            v2m = torch.sparse.mm(batch_holder.vars_const_graph.t(), variables)
+            v2m = self.make_query(v2m)
+
+            const_msg = torch.cat([constraints, v2m, const_values], dim=-1)
             const_tmp = self.constraint_update(const_msg)
             constraints = const_tmp[:, :self.feature_maps] + 0.5 * constraints  # TODO: No residual connections?
 
@@ -154,9 +165,10 @@ class MIPNetwork(torch.nn.Module):
             const2var_msg_pos = torch.sparse.mm(unit_graph_pos, constr_features) / vars_scaler
             const2var_msg_neg = torch.sparse.mm(unit_graph_neg, constr_features) / vars_scaler
 
-            eq_lhs = torch.sparse.mm(batch_holder.vars_eq_const_graph.t(), query)
-            eq_loss = torch.square((eq_const_values - eq_lhs) / eq_const_scaler)
-            eq_const_msg = torch.cat([eq_constraints, eq_loss], dim=-1)
+            v2c_eq = torch.sparse.mm(batch_holder.vars_eq_const_graph.t(), variables)
+            v2c_eq = self.make_query_2(v2c_eq)
+
+            eq_const_msg = torch.cat([eq_constraints, v2c_eq, eq_const_values], dim=-1)
             eq_const_tmp = self.eq_constraint_update(eq_const_msg)
 
             eq_constraints = eq_const_tmp[:, :self.feature_maps] + 0.5 * eq_constraints
@@ -168,15 +180,15 @@ class MIPNetwork(torch.nn.Module):
             out_vars = self.output(variables)
             if self.use_preconditioning:
                 out_vars = out_vars * logit_scalers + out_vars.detach() * (1 - logit_scalers)
-            #int_noise = self.noise.sample(out_vars.size()).cuda()
+            # int_noise = self.noise.sample(out_vars.size()).cuda()
             int_noise = sample_logistic(out_vars.size())
-            #int_noise = torch.sign(out_vars)*torch.abs(int_noise)
-            #mul_noise = torch.exp(self.noise.sample([1]).cuda()*0.2)
-            #mul_noise = torch.abs(self.noise.sample(out_vars.size()).cuda() * 0.5)
+            # int_noise = torch.sign(out_vars)*torch.abs(int_noise)
+            # mul_noise = torch.exp(self.noise.sample([1]).cuda()*0.2)
+            # mul_noise = torch.abs(self.noise.sample(out_vars.size()).cuda() * 0.5)
 
             # Noise is not applied to variables that doesn't have integer constraint
             if self.training:
-                #out_vars = (out_vars*mul_noise + 1*int_noise) * int_mask + out_vars*(1-int_mask)
+                # out_vars = (out_vars*mul_noise + 1*int_noise) * int_mask + out_vars*(1-int_mask)
                 out_vars = out_vars + 1 * int_noise * int_mask
 
             out = torch.sigmoid(out_vars) * int_mask + out_vars * (1 - int_mask) * self.continuous_var_scale
@@ -196,7 +208,7 @@ class MIPNetwork(torch.nn.Module):
             # self.summary.add_histogram("constraints_data", constraints, self.global_step)
             # self.summary.add_histogram("const_scaler", const_scaler, self.global_step)
             # self.summary.add_histogram("vars_scaler", vars_scaler, self.global_step)
-            #self.summary.add_histogram("mul_noise", mul_noise, self.global_step)
+            # self.summary.add_histogram("mul_noise", mul_noise, self.global_step)
             if self.use_preconditioning: self.summary.add_histogram("logit_scaler", logit_scalers, self.global_step)
             # self.summary.add_histogram("divs", divs, self.global_step)
 
