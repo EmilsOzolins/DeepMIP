@@ -5,6 +5,7 @@ import torch.nn as nn
 import hyperparams as params
 from model.normalization import PairNorm
 from utils.data_utils import sparse_func, InputDataHolder, sparse_dense_mul_1d
+import random
 
 
 def sample_triangular(shape):
@@ -47,21 +48,28 @@ class MIPNetwork(torch.nn.Module):
         )
 
         self.make_query = nn.Sequential(
-            nn.Linear(self.feature_maps, self.feature_maps),
+            nn.Linear(self.feature_maps * 2, self.feature_maps),
             PairNorm(subtract_mean=False),
             nn.ReLU(),
             nn.Linear(self.feature_maps, self.feature_maps),
         )
 
         self.make_query_2 = nn.Sequential(
-            nn.Linear(self.feature_maps, self.feature_maps),
+            nn.Linear(self.feature_maps * 2, self.feature_maps),
             PairNorm(subtract_mean=False),
             nn.ReLU(),
             nn.Linear(self.feature_maps, self.feature_maps),
         )
 
         self.variable_update = nn.Sequential(
-            nn.Linear(self.feature_maps * 4 + 2, self.feature_maps),
+            nn.Linear(self.feature_maps * 3 + 3, self.feature_maps),
+            PairNorm(subtract_mean=False),
+            nn.ReLU(),
+            nn.Linear(self.feature_maps, self.feature_maps),
+        )
+
+        self.variables_guess = nn.Sequential(
+            nn.Linear(self.feature_maps * 3 + 2, self.feature_maps),
             PairNorm(subtract_mean=False),
             nn.ReLU(),
             nn.Linear(self.feature_maps, self.feature_maps),
@@ -138,23 +146,46 @@ class MIPNetwork(torch.nn.Module):
 
         int_mask = torch.unsqueeze(batch_holder.integer_mask, dim=-1)
 
+        with torch.no_grad():
+            steps = random.randint(0, self.pass_steps * 4) if self.training else self.pass_steps * 4
+            for i in range(steps):
+                c2g = torch.sparse.mm(batch_holder.vars_const_graph, constraints)
+                c2ge = torch.sparse.mm(batch_holder.vars_eq_const_graph, eq_constraints)
+
+                guess = self.variables_guess(torch.cat([variables, c2g, c2ge, int_mask, relaxed_solution], dim=-1))
+                guess = torch.sigmoid(guess)
+
+                v2m = torch.sparse.mm(batch_holder.vars_const_graph.t(), torch.cat([variables, guess], dim=-1))
+                v2m = self.make_query(v2m)
+
+                const_msg = torch.cat([constraints, v2m, const_values], dim=-1)
+                const_tmp = self.constraint_update(const_msg)
+                constraints = const_tmp[:, :self.feature_maps] + 0.5 * constraints  # TODO: No residual connections?
+
+                constr_features = const_tmp[:, self.feature_maps:]
+                c2v = torch.sparse.mm(batch_holder.vars_const_graph, constr_features) / vars_scaler
+
+                v2c_eq = torch.sparse.mm(batch_holder.vars_eq_const_graph.t(), torch.cat([variables, guess], dim=-1))
+                v2c_eq = self.make_query_2(v2c_eq)
+
+                eq_const_msg = torch.cat([eq_constraints, v2c_eq, eq_const_values], dim=-1)
+                eq_const_tmp = self.eq_constraint_update(eq_const_msg)
+
+                eq_constraints = eq_const_tmp[:, :self.feature_maps] + 0.5 * eq_constraints
+                eq_const2var_msg = torch.sparse.mm(batch_holder.vars_eq_const_graph, eq_const_tmp[:, self.feature_maps:])
+
+                var_msg = torch.cat([variables, eq_const2var_msg, c2v, obj_multipliers, int_mask, relaxed_solution],dim=-1)
+                variables = self.variable_update(var_msg) + 0.5 * variables
+
+
         for i in range(self.pass_steps):
+            c2g = torch.sparse.mm(batch_holder.vars_const_graph, constraints)
+            c2ge = torch.sparse.mm(batch_holder.vars_eq_const_graph, eq_constraints)
 
-            # with torch.enable_grad():
-            #     var_noisy = torch.cat([variables, self.noise.sample([var_count, 4]).cuda()], dim=-1)
-            #     query = self.make_query(var_noisy)
-            #     query = (query + 0.5) * int_mask + query * (1 - int_mask)
-            #
-            #     left_side_value = torch.sparse.mm(batch_holder.vars_const_graph.t(), query)
-            #     left_side_value = (left_side_value - const_values) / const_scaler
-            #     const_loss = left_side_value
-            # const_loss1 = torch.relu(left_side_value)
+            guess = self.variables_guess(torch.cat([variables, c2g, c2ge, int_mask, relaxed_solution], dim=-1))
+            guess = torch.sigmoid(guess)
 
-            # obj_loss = query * obj_multipliers
-            # const_gradient = torch.autograd.grad([const_loss1.sum()], [query], retain_graph=True)[0]
-            # const_gradient1 = torch.autograd.grad([const_loss1.sum()], [query], retain_graph=True)[0]
-
-            v2m = torch.sparse.mm(batch_holder.vars_const_graph.t(), variables)
+            v2m = torch.sparse.mm(batch_holder.vars_const_graph.t(), torch.cat([variables, guess], dim=-1))
             v2m = self.make_query(v2m)
 
             const_msg = torch.cat([constraints, v2m, const_values], dim=-1)
@@ -162,10 +193,9 @@ class MIPNetwork(torch.nn.Module):
             constraints = const_tmp[:, :self.feature_maps] + 0.5 * constraints  # TODO: No residual connections?
 
             constr_features = const_tmp[:, self.feature_maps:]
-            const2var_msg_pos = torch.sparse.mm(unit_graph_pos, constr_features) / vars_scaler
-            const2var_msg_neg = torch.sparse.mm(unit_graph_neg, constr_features) / vars_scaler
+            c2v = torch.sparse.mm(batch_holder.vars_const_graph, constr_features) / vars_scaler
 
-            v2c_eq = torch.sparse.mm(batch_holder.vars_eq_const_graph.t(), variables)
+            v2c_eq = torch.sparse.mm(batch_holder.vars_eq_const_graph.t(), torch.cat([variables, guess], dim=-1))
             v2c_eq = self.make_query_2(v2c_eq)
 
             eq_const_msg = torch.cat([eq_constraints, v2c_eq, eq_const_values], dim=-1)
@@ -174,7 +204,7 @@ class MIPNetwork(torch.nn.Module):
             eq_constraints = eq_const_tmp[:, :self.feature_maps] + 0.5 * eq_constraints
             eq_const2var_msg = torch.sparse.mm(batch_holder.vars_eq_const_graph, eq_const_tmp[:, self.feature_maps:])
 
-            var_msg = torch.cat([variables, const2var_msg_pos, const2var_msg_neg, eq_const2var_msg, obj_multipliers, int_mask], dim=-1)
+            var_msg = torch.cat([variables, eq_const2var_msg, c2v, obj_multipliers, int_mask, relaxed_solution], dim=-1)
             variables = self.variable_update(var_msg) + 0.5 * variables
 
             out_vars = self.output(variables)
@@ -187,9 +217,9 @@ class MIPNetwork(torch.nn.Module):
             # mul_noise = torch.abs(self.noise.sample(out_vars.size()).cuda() * 0.5)
 
             # Noise is not applied to variables that doesn't have integer constraint
-            if self.training:
-                # out_vars = (out_vars*mul_noise + 1*int_noise) * int_mask + out_vars*(1-int_mask)
-                out_vars = out_vars + 1 * int_noise * int_mask
+            # if self.training:
+            # out_vars = (out_vars*mul_noise + 1*int_noise) * int_mask + out_vars*(1-int_mask)
+            out_vars = out_vars + 1 * int_noise * int_mask
 
             out = torch.sigmoid(out_vars) * int_mask + out_vars * (1 - int_mask) * self.continuous_var_scale
             outputs.append(out)
