@@ -63,9 +63,11 @@ class BoundedKnapsackDataset(MIPDataset, IterableDataset):
 
                 ip = self.convert_to_mip(var_indices, weights, values, copies, capacity)
                 for v_id, relax_val in zip(var_indices, relaxed_solution):
-                    ip.variable_relaxed_solution(v_id, relax_val)
+                    ip = ip.variable_relaxed_solution(v_id, relax_val)
 
                 ip.optimal_solution_vars(var_indices, solution_vars)
+                for v_id, relax_val in zip(var_indices, relaxed_solution):
+                    ip = ip.variable_relaxed_solution(v_id, relax_val)
 
                 yield {"mip": ip,
                        "optimal_solution": torch.as_tensor([solution], dtype=torch.float32)}
