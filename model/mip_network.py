@@ -36,49 +36,49 @@ class MIPNetwork(torch.nn.Module):
         self.constraint_update = nn.Sequential(
             nn.Linear(self.feature_maps * 2 + 1, self.feature_maps),
             PairNorm(subtract_mean=False),
-            nn.ReLU(),
+            nn.LeakyReLU(),
             nn.Linear(self.feature_maps, self.feature_maps * 2),
         )
 
         self.eq_constraint_update = nn.Sequential(
             nn.Linear(self.feature_maps * 2 + 1, self.feature_maps),
             PairNorm(subtract_mean=False),
-            nn.ReLU(),
+            nn.LeakyReLU(),
             nn.Linear(self.feature_maps, self.feature_maps * 2),
         )
 
         self.make_query = nn.Sequential(
             nn.Linear(self.feature_maps * 2, self.feature_maps),
             PairNorm(subtract_mean=False),
-            nn.ReLU(),
+            nn.LeakyReLU(),
             nn.Linear(self.feature_maps, self.feature_maps),
         )
 
         self.make_query_2 = nn.Sequential(
             nn.Linear(self.feature_maps * 2, self.feature_maps),
             PairNorm(subtract_mean=False),
-            nn.ReLU(),
+            nn.LeakyReLU(),
             nn.Linear(self.feature_maps, self.feature_maps),
         )
 
         self.variable_update = nn.Sequential(
             nn.Linear(self.feature_maps * 3 + 3, self.feature_maps),
             PairNorm(subtract_mean=False),
-            nn.ReLU(),
+            nn.LeakyReLU(),
             nn.Linear(self.feature_maps, self.feature_maps),
         )
 
         self.variables_guess = nn.Sequential(
             nn.Linear(self.feature_maps * 3 + 2, self.feature_maps),
             PairNorm(subtract_mean=False),
-            nn.ReLU(),
+            nn.LeakyReLU(),
             nn.Linear(self.feature_maps, self.feature_maps),
         )
 
         self.output = nn.Sequential(
             nn.Linear(self.feature_maps, self.feature_maps),
             PairNorm(subtract_mean=False),
-            nn.ReLU(),
+            nn.LeakyReLU(),
             nn.Linear(self.feature_maps, output_bits)
         )
 

@@ -11,7 +11,7 @@ from torch.utils.tensorboard import SummaryWriter
 from data.lp_dataset import LPDataset
 import config
 import hyperparams as params
-from data.kanapsack import BinaryKnapsackDataset
+from data.kanapsack import BinaryKnapsackDataset, ConstrainedBinaryKnapsackDataset
 from data.lp_knapsack import LPKnapsackDataset
 from data.sudoku import BinarySudokuDataset
 from metrics.discrete_metrics import DiscretizationMetrics
@@ -37,21 +37,21 @@ def main():
     # sudoku_test_data = "binary/sudoku_test.csv"
     # sudoku_train_data = "binary/sudoku_train.csv"
     # sudoku_val_data = "binary/sudoku_validate.csv"
-    sudoku_test_data = "binary/hard_sudoku_test.csv"
-    sudoku_train_data = "binary/hard_sudoku_train.csv"
-    sudoku_val_data = "binary/hard_sudoku_valid.csv"
+    # sudoku_test_data = "binary/hard_sudoku_test.csv"
+    # sudoku_train_data = "binary/hard_sudoku_train.csv"
+    # sudoku_val_data = "binary/hard_sudoku_valid.csv"
     #
-    test_dataset = BinarySudokuDataset(sudoku_test_data)
-    train_dataset = BinarySudokuDataset(sudoku_train_data)
-    val_dataset = BinarySudokuDataset(sudoku_val_data)
+    # test_dataset = BinarySudokuDataset(sudoku_test_data)
+    # train_dataset = BinarySudokuDataset(sudoku_train_data)
+    # val_dataset = BinarySudokuDataset(sudoku_val_data)
 
     # test_dataset = IntegerSudokuDataset(sudoku_test_data)
     # train_dataset = IntegerSudokuDataset(sudoku_train_data)
     # val_dataset = IntegerSudokuDataset(sudoku_val_data)
     #
-    # test_dataset = BinaryKnapsackDataset(2, 20)
-    # train_dataset = BinaryKnapsackDataset(2, 20)
-    # val_dataset = BinaryKnapsackDataset(2, 20)
+    test_dataset = BinaryKnapsackDataset(2, 20)
+    train_dataset = BinaryKnapsackDataset(2, 20)
+    val_dataset = BinaryKnapsackDataset(2, 20)
     #
     # test_dataset = ConstrainedBinaryKnapsackDataset(2, 20)
     # train_dataset = ConstrainedBinaryKnapsackDataset(2, 20)
@@ -421,6 +421,31 @@ def evaluate_model(network, test_dataloader, dataset, eval_iterations=None):
         metrics.update(prediction=prediction, batch_holder=batch_holder)
 
     return metrics.numpy_result
+
+
+def check_suboptimality():
+    network = MIPNetwork(
+        output_bits=params.output_bits,
+        feature_maps=params.feature_maps,
+        pass_steps=params.recurrent_steps,
+        summary=summary
+    ).cuda()
+
+    checkpoint = torch.load("/host-dir/mip_models/20220428-064755" + "/model.pth")
+    network.load_state_dict(checkpoint['model_state_dict'])
+
+    data = []
+    for i in range(5):
+        data_data = []
+        for suboptimality in [0, 0.075, 0.125, 0.25, 0.5, 1, 2, 4, 8, 16, 32, 64]:
+            test_dataset = ConstrainedBinaryKnapsackDataset(2, 20, suboptimality=suboptimality)
+            test_dataloader = create_data_loader(test_dataset)
+
+            results = evaluate_model(network, test_dataloader, test_dataset, eval_iterations=50)
+            data_data.append(float(results["fully_solved"]))
+        data.append(data_data)
+
+    print(data)
 
 
 if __name__ == '__main__':
